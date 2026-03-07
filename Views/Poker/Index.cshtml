@@ -1,0 +1,119 @@
+@{
+    ViewData["Title"] = "Poker Lobisi";
+}
+
+<div class="poker-lobby">
+    <div class="lobby-hero">
+        <div class="hero-glow"></div>
+        <h1 class="lobby-title">🎰 Texas Hold'em Poker</h1>
+        <p class="lobby-subtitle">AI destekli strateji danışmanı ile profesyonel poker deneyimi</p>
+    </div>
+
+    <form asp-action="NewGame" method="post" class="lobby-form glass-card">
+        <div class="form-section">
+            <div class="section-title">
+                <div class="icon green">🤖</div>
+                Rakip Sayısı
+            </div>
+            <div class="radio-group">
+                @for (int i = 1; i <= 5; i++)
+                {
+                    <label class="radio-card @(i == 3 ? "selected" : "")">
+                        <input type="radio" name="botCount" value="@i" @(i == 3 ? "checked" : "")
+                               onchange="selectRadio(this)" />
+                        <span class="radio-value">@i</span>
+                        <span class="radio-label">Bot</span>
+                    </label>
+                }
+            </div>
+        </div>
+
+        <div class="form-section">
+            <div class="section-title">
+                <div class="icon amber">💰</div>
+                Başlangıç Chip
+            </div>
+            <div class="radio-group">
+                @foreach (var chips in new[] { 500, 1000, 2500, 5000, 10000 })
+                {
+                    <label class="radio-card @(chips == 1000 ? "selected" : "")">
+                        <input type="radio" name="startingChips" value="@chips" @(chips == 1000 ? "checked" : "")
+                               onchange="selectRadio(this)" />
+                        <span class="radio-value">@chips.ToString("N0")</span>
+                        <span class="radio-label">Chip</span>
+                    </label>
+                }
+            </div>
+        </div>
+
+        <div class="form-section">
+            <div class="section-title">
+                <div class="icon purple">🎯</div>
+                Blind Seviyesi
+            </div>
+            <div class="radio-group">
+                @{
+                    var blinds = new[] {
+                        (Level: 1, Label: "5/10"),
+                        (Level: 2, Label: "10/20"),
+                        (Level: 3, Label: "25/50"),
+                        (Level: 4, Label: "50/100")
+                    };
+                }
+                @foreach (var blind in blinds)
+                {
+                    <label class="radio-card @(blind.Level == 2 ? "selected" : "")">
+                        <input type="radio" name="blindLevel" value="@blind.Level" @(blind.Level == 2 ? "checked" : "")
+                               onchange="selectRadio(this)" />
+                        <span class="radio-value">@blind.Label</span>
+                        <span class="radio-label">SB/BB</span>
+                    </label>
+                }
+            </div>
+        </div>
+
+        <button type="submit" class="btn-play">
+            <span class="btn-play-icon">🃏</span>
+            <span>Oyuna Başla</span>
+        </button>
+    </form>
+
+    <a href="@Url.Action("Live", "Poker")" class="btn-live-mode glass-card">
+        <span class="live-dot"></span>
+        <span class="btn-live-icon">🔴</span>
+        <div class="btn-live-text">
+            <strong>Canlı Mod</strong>
+            <small>Ekrandaki kartları algılayarak anlık strateji analizi al</small>
+        </div>
+        <span class="btn-live-arrow">→</span>
+    </a>
+
+
+    <div class="lobby-features">
+        <div class="feature-card glass-card">
+            <div class="feature-icon">🧠</div>
+            <h3>AI Strateji</h3>
+            <p>GTO tabanlı strateji motoru ile her el için analiz</p>
+        </div>
+        <div class="feature-card glass-card">
+            <div class="feature-icon">📊</div>
+            <h3>Olasılık Hesaplama</h3>
+            <p>Pot odds, outs ve equity gerçek zamanlı hesaplama</p>
+        </div>
+        <div class="feature-card glass-card">
+            <div class="feature-icon">🤖</div>
+            <h3>AI Danışman</h3>
+            <p>OpenRouter ile güçlendirilmiş poker koçu</p>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        function selectRadio(input) {
+            const group = input.closest('.radio-group');
+            group.querySelectorAll('.radio-card').forEach(c => c.classList.remove('selected'));
+            input.closest('.radio-card').classList.add('selected');
+        }
+    </script>
+}

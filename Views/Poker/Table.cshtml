@@ -1,0 +1,495 @@
+@model Blackjack.Models.Poker.PokerGame
+
+@{
+    ViewData["Title"] = "Poker Masası";
+    var game = Model;
+    var human = game.HumanPlayer;
+    var strategy = ViewData["Strategy"] as Blackjack.Models.Poker.StrategyResult;
+
+    string GetSuitSymbol(string suit) => suit switch
+    {
+        "Kupa" => "♥", "Karo" => "♦",
+        "Sinek" => "♣", "Maça" => "♠",
+        _ => "?"
+    };
+
+    string GetSuitClass(string suit) => suit switch
+    {
+        "Kupa" => "kupa", "Karo" => "karo",
+        "Sinek" => "sinek", "Maça" => "maca",
+        _ => ""
+    };
+
+    string GetPhaseDisplay(Blackjack.Models.Poker.GamePhase phase) => phase switch
+    {
+        Blackjack.Models.Poker.GamePhase.PreFlop => "Pre-Flop",
+        Blackjack.Models.Poker.GamePhase.Flop => "Flop",
+        Blackjack.Models.Poker.GamePhase.Turn => "Turn",
+        Blackjack.Models.Poker.GamePhase.River => "River",
+        Blackjack.Models.Poker.GamePhase.Showdown => "Showdown",
+        Blackjack.Models.Poker.GamePhase.Finished => "El Bitti",
+        _ => "Bekleniyor"
+    };
+}
+
+<div class="poker-table-container">
+    <!-- Top Status Bar -->
+    <div class="poker-top-bar">
+        <div class="poker-logo">🎰 Texas Hold'em</div>
+        <div class="poker-stats-bar">
+            <div class="stat-badge green">
+                <span>El:</span>
+                <span class="stat-value">#@game.RoundNumber</span>
+            </div>
+            <div class="stat-badge amber">
+                <span>Fase:</span>
+                <span class="stat-value">@GetPhaseDisplay(game.Phase)</span>
+            </div>
+            <div class="stat-badge red">
+                <span>Pot:</span>
+                <span class="stat-value">@game.Pot</span>
+            </div>
+            <div class="stat-badge blue">
+                <span>Blind:</span>
+                <span class="stat-value">@game.SmallBlindAmount/@game.BigBlindAmount</span>
+            </div>
+        </div>
+        <div>
+            <form asp-action="Reset" method="post" style="display:inline">
+                <button type="submit" class="btn-reset-poker" onclick="return confirm('Masadan ayrılmak istediğinize emin misiniz?')">🚪 Masadan Ayrıl</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Winner Banner -->
+    @if (!string.IsNullOrEmpty(game.WinnerMessage))
+    {
+        <div class="winner-banner">
+            <span>@game.WinnerMessage</span>
+        </div>
+    }
+
+    <div class="poker-main-grid">
+        <!-- LEFT: Table + Action -->
+        <div class="poker-left-col">
+            <!-- Poker Table -->
+            <div class="poker-table-visual">
+                <div class="table-felt">
+                    <!-- Community Cards -->
+                    <div class="community-area">
+                        <div class="community-label">Community Cards</div>
+                        <div class="community-cards">
+                            @if (game.CommunityCards.Count > 0)
+                            {
+                                @foreach (var card in game.CommunityCards)
+                                {
+                                    <div class="poker-card community @GetSuitClass(card.Suit)">
+                                        <span class="card-rank-top">@card.Rank</span>
+                                        <span class="card-suit-center">@GetSuitSymbol(card.Suit)</span>
+                                        <span class="card-rank-bottom">@card.Rank</span>
+                                    </div>
+                                }
+                                @for (int i = game.CommunityCards.Count; i < 5; i++)
+                                {
+                                    <div class="poker-card placeholder">
+                                        <span class="card-placeholder-icon">?</span>
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                @for (int i = 0; i < 5; i++)
+                                {
+                                    <div class="poker-card placeholder">
+                                        <span class="card-placeholder-icon">?</span>
+                                    </div>
+                                }
+                            }
+                        </div>
+                        <div class="pot-display">
+                            <span class="pot-icon">💰</span>
+                            <span class="pot-amount">@game.Pot</span>
+                        </div>
+                    </div>
+
+                    <!-- Player Seats -->
+                    <div class="seats-container">
+                        @for (int i = 0; i < game.Players.Count; i++)
+                        {
+                            var player = game.Players[i];
+                            var isCurrentTurn = i == game.CurrentPlayerIndex && game.Phase != Blackjack.Models.Poker.GamePhase.Finished && game.Phase != Blackjack.Models.Poker.GamePhase.Showdown;
+                            var seatClass = $"seat seat-{i} {(player.HasFolded ? "folded" : "")} {(isCurrentTurn ? "active-turn" : "")} {(player.IsAllIn ? "all-in" : "")}";
+
+                            <div class="@seatClass">
+                                <div class="seat-info">
+                                    <div class="seat-name">
+                                        @(player.IsBot ? "🤖" : "👤") @player.Name
+                                        @if (player.IsDealer) { <span class="dealer-chip">D</span> }
+                                    </div>
+                                    <div class="seat-chips">💰 @player.Chips</div>
+                                    <div class="seat-position">@player.PositionDisplay</div>
+                                    @if (player.CurrentBet > 0)
+                                    {
+                                        <div class="seat-bet">Bahis: @player.CurrentBet</div>
+                                    }
+                                    @if (player.LastAction != Blackjack.Models.Poker.PlayerAction.None)
+                                    {
+                                        <div class="seat-action action-@player.LastAction.ToString().ToLower()">
+                                            @(player.LastAction switch
+                                            {
+                                                Blackjack.Models.Poker.PlayerAction.Fold => "❌ Fold",
+                                                Blackjack.Models.Poker.PlayerAction.Check => "✋ Check",
+                                                Blackjack.Models.Poker.PlayerAction.Call => "📞 Call",
+                                                Blackjack.Models.Poker.PlayerAction.Raise => "⬆️ Raise",
+                                                Blackjack.Models.Poker.PlayerAction.AllIn => "🔥 ALL-IN",
+                                                _ => ""
+                                            })
+                                        </div>
+                                    }
+                                </div>
+                                <!-- Player Cards -->
+                                <div class="seat-cards">
+                                    @if (!player.HasFolded)
+                                    {
+                                        @if (!player.IsBot || game.Phase == Blackjack.Models.Poker.GamePhase.Showdown || game.Phase == Blackjack.Models.Poker.GamePhase.Finished)
+                                        {
+                                            @foreach (var card in player.HoleCards)
+                                            {
+                                                <div class="poker-card mini @GetSuitClass(card.Suit)">
+                                                    <span>@card.Rank</span>
+                                                    <span>@GetSuitSymbol(card.Suit)</span>
+                                                </div>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <div class="poker-card mini facedown"><span>🂠</span></div>
+                                            <div class="poker-card mini facedown"><span>🂠</span></div>
+                                        }
+                                    }
+                                </div>
+                                @if (player.HandResult != null && (game.Phase == Blackjack.Models.Poker.GamePhase.Showdown || game.Phase == Blackjack.Models.Poker.GamePhase.Finished))
+                                {
+                                    <div class="seat-hand-result">@player.HandResult.RankDisplayName</div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- Your Hand Display -->
+            <div class="your-hand-section glass-card">
+                <div class="section-title">
+                    <div class="icon green">🃏</div>
+                    Senin Kartların
+                </div>
+                <div class="your-cards">
+                    @foreach (var card in human.HoleCards)
+                    {
+                        <div class="poker-card large @GetSuitClass(card.Suit)">
+                            <span class="card-rank-top">@card.Rank</span>
+                            <span class="card-suit-center">@GetSuitSymbol(card.Suit)</span>
+                            <span class="card-rank-bottom">@card.Rank</span>
+                        </div>
+                    }
+                </div>
+                @if (human.HandResult != null)
+                {
+                    <div class="hand-result-display">@human.HandResult.RankDisplayName — @human.HandResult.Description</div>
+                }
+            </div>
+
+            <!-- Action Buttons -->
+            @if (game.IsHumanTurn)
+            {
+                <div class="action-panel glass-card">
+                    <div class="section-title">
+                        <div class="icon amber">⚡</div>
+                        Sıra Sende!
+                    </div>
+                    <div class="action-buttons">
+                        <button class="btn-action fold" onclick="performAction('Fold')">❌ Fold</button>
+
+                        @if (game.CanCheck)
+                        {
+                            <button class="btn-action check" onclick="performAction('Check')">✋ Check</button>
+                        }
+                        else
+                        {
+                            <button class="btn-action call" onclick="performAction('Call')">📞 Call (@game.CallAmount)</button>
+                        }
+
+                        <div class="raise-control">
+                            <input type="range" id="raiseSlider" class="raise-slider"
+                                   min="@game.MinRaise" max="@(human.Chips + human.CurrentBet)"
+                                   value="@game.MinRaise" oninput="updateRaiseDisplay(this.value)" />
+                            <button class="btn-action raise" onclick="performAction('Raise', document.getElementById('raiseSlider').value)">
+                                ⬆️ Raise <span id="raiseAmount">@game.MinRaise</span>
+                            </button>
+                        </div>
+
+                        <button class="btn-action allin" onclick="if(confirm('ALL-IN yapmak istediğinize emin misiniz?')) performAction('AllIn')">🔥 ALL-IN (@human.Chips)</button>
+                    </div>
+                </div>
+            }
+
+            @if (game.Phase == Blackjack.Models.Poker.GamePhase.Finished)
+            {
+                <div class="action-panel glass-card">
+                    @if (game.IsGameOver)
+                    {
+                        <div class="game-over-msg">
+                            <h3>🏁 Oyun Bitti!</h3>
+                            <form asp-action="Index" method="get">
+                                <button type="submit" class="btn-action call" style="width:100%">🏠 Lobiye Dön</button>
+                            </form>
+                        </div>
+                    }
+                    else
+                    {
+                        <form asp-action="NextHand" method="post">
+                            <button type="submit" class="btn-action call" style="width:100%;font-size:1.1rem">🃏 Sonraki El</button>
+                        </form>
+                    }
+                </div>
+            }
+        </div>
+
+        <!-- RIGHT: Strategy + AI + Log -->
+        <div class="poker-right-col">
+            <!-- Strategy Panel -->
+            @if (strategy != null)
+            {
+                <div class="glass-card strategy-panel">
+                    <div class="section-title">
+                        <div class="icon purple">🧠</div>
+                        Strateji Analizi
+                    </div>
+
+                    <div class="strategy-grid">
+                        <div class="strategy-item">
+                            <span class="strategy-label">Chen Skoru</span>
+                            <span class="strategy-value">@strategy.ChenScore.ToString("F0")/20</span>
+                        </div>
+                        <div class="strategy-item">
+                            <span class="strategy-label">El Gücü</span>
+                            <div class="strength-bar">
+                                <div class="strength-fill" style="width:@(Math.Min(strategy.HandStrengthPercent, 100))%"></div>
+                            </div>
+                            <span class="strategy-value">%@strategy.HandStrengthPercent.ToString("F0")</span>
+                        </div>
+                        @if (strategy.PotOdds > 0)
+                        {
+                            <div class="strategy-item">
+                                <span class="strategy-label">Pot Odds</span>
+                                <span class="strategy-value">%@strategy.PotOdds.ToString("F1")</span>
+                            </div>
+                        }
+                        @if (strategy.Outs > 0)
+                        {
+                            <div class="strategy-item">
+                                <span class="strategy-label">Outs</span>
+                                <span class="strategy-value">@strategy.Outs kart</span>
+                            </div>
+                        }
+                        <div class="strategy-item">
+                            <span class="strategy-label">Agresyon</span>
+                            <span class="strategy-value">@strategy.AggressionLevel</span>
+                        </div>
+                    </div>
+
+                    <div class="strategy-recommendation">
+                        <div class="recommendation-label">📋 Öneri</div>
+                        <div class="recommendation-text">@strategy.RecommendedAction</div>
+                    </div>
+
+                    <div class="strategy-reasoning">
+                        @strategy.Reasoning
+                    </div>
+
+                    @if (strategy.Tips.Count > 0)
+                    {
+                        <div class="strategy-tips">
+                            @foreach (var tip in strategy.Tips)
+                            {
+                                <div class="tip-item">@tip</div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- AI Chat Panel -->
+            <div class="glass-card ai-panel poker-ai">
+                <div class="ai-header">
+                    <div class="ai-avatar">🤖</div>
+                    <div class="ai-header-text">
+                        <h3>AI Poker Koçu</h3>
+                        <p>OpenRouter ile güçlendirilmiştir</p>
+                    </div>
+                </div>
+
+                <div class="ai-messages" id="aiMessages">
+                    <div class="ai-msg system">
+                        👋 Merhaba! Ben AI Poker koçunuzum. Strateji soruları sorabilir veya hızlı butonları kullanabilirsiniz.
+                    </div>
+                </div>
+
+                <div class="ai-quick-actions">
+                    <button class="btn-quick" onclick="askPokerAI('strategy')">🎯 Strateji</button>
+                    <button class="btn-quick" onclick="askPokerAI('hand')">🃏 El Analizi</button>
+                    <button class="btn-quick" onclick="askPokerAI('odds')">📊 Odds</button>
+                    <button class="btn-quick" onclick="askPokerAI('tip')">💡 İpucu</button>
+                </div>
+
+                <div class="ai-input-area">
+                    <input type="text" class="ai-input" id="pokerAiInput" placeholder="AI'ya poker sorusu sor..."
+                           onkeydown="if(event.key==='Enter') sendPokerMessage()" />
+                    <button class="btn-send" id="btnPokerSend" onclick="sendPokerMessage()">➤</button>
+                </div>
+            </div>
+
+            <!-- Action Log -->
+            <div class="glass-card log-panel">
+                <div class="section-title">
+                    <div class="icon blue">📜</div>
+                    Oyun Logu
+                </div>
+                <div class="log-list" id="actionLog">
+                    @foreach (var log in game.ActionLog)
+                    {
+                        <div class="log-item">@log</div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    // =============================================
+    // Player Actions
+    // =============================================
+    function updateRaiseDisplay(value) {
+        document.getElementById('raiseAmount').textContent = value;
+    }
+
+    async function performAction(action, amount) {
+        try {
+            const response = await fetch('@Url.Action("Action", "Poker")', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: action, amount: parseInt(amount) || 0 })
+            });
+
+            const data = await response.json();
+            if (data.success && data.redirect) {
+                window.location.href = data.redirect;
+            } else if (!data.success) {
+                alert(data.error || 'Hata oluştu');
+            }
+        } catch (err) {
+            console.error('Action error:', err);
+        }
+    }
+
+    // =============================================
+    // AI Chat
+    // =============================================
+    const messagesDiv = document.getElementById('aiMessages');
+    const pokerAiInput = document.getElementById('pokerAiInput');
+    const btnPokerSend = document.getElementById('btnPokerSend');
+
+    function addAIMsg(text, role) {
+        const msg = document.createElement('div');
+        msg.className = `ai-msg ${role}`;
+        msg.innerHTML = text;
+        messagesDiv.appendChild(msg);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    function showAITyping() {
+        const typing = document.createElement('div');
+        typing.className = 'ai-msg assistant';
+        typing.id = 'typingIndicator';
+        typing.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
+        messagesDiv.appendChild(typing);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    function removeAITyping() {
+        const el = document.getElementById('typingIndicator');
+        if (el) el.remove();
+    }
+
+    function getPokerState() {
+        return {
+            phase: "@game.Phase",
+            pot: @game.Pot,
+            currentBet: @game.CurrentBet,
+            playerChips: @human.Chips,
+            holeCards: "@string.Join(", ", human.HoleCards.Select(c => c.DisplayName))",
+            communityCards: "@string.Join(", ", game.CommunityCards.Select(c => c.DisplayName))",
+            @if (strategy != null) {
+                @:chenScore: @strategy.ChenScore.ToString("F0", System.Globalization.CultureInfo.InvariantCulture),
+                @:handStrength: @strategy.HandStrengthPercent.ToString("F0", System.Globalization.CultureInfo.InvariantCulture),
+                @:potOdds: @strategy.PotOdds.ToString("F1", System.Globalization.CultureInfo.InvariantCulture),
+                @:outs: @strategy.Outs,
+                @:recommendation: "@Html.Raw(strategy.RecommendedAction.Replace("\"", "\\\""))",
+                @:aggression: "@Html.Raw(strategy.AggressionLevel.Replace("\"", "\\\""))",
+            }
+            activePlayers: @game.ActivePlayers.Count,
+            blind: "@game.SmallBlindAmount/@game.BigBlindAmount"
+        };
+    }
+
+    async function sendPokerMessage() {
+        const text = pokerAiInput.value.trim();
+        if (!text) return;
+
+        addAIMsg(text, 'user');
+        pokerAiInput.value = '';
+        btnPokerSend.disabled = true;
+        showAITyping();
+
+        try {
+            const response = await fetch('@Url.Action("PokerChat", "AI")', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: text, gameState: getPokerState() })
+            });
+
+            removeAITyping();
+            const data = await response.json();
+            if (data.success) {
+                addAIMsg(data.response, 'assistant');
+            } else {
+                addAIMsg('❌ ' + (data.error || 'Bir hata oluştu'), 'system');
+            }
+        } catch (err) {
+            removeAITyping();
+            addAIMsg('❌ Bağlantı hatası.', 'system');
+        }
+
+        btnPokerSend.disabled = false;
+        pokerAiInput.focus();
+    }
+
+    async function askPokerAI(type) {
+        const prompts = {
+            'strategy': 'Mevcut elimle ne yapmalıyım? Fold, Call, Raise? Detaylı strateji öner.',
+            'hand': 'Elimdeki kartları değerlendir. Bu el ne kadar güçlü? Board ile uyumu nasıl?',
+            'odds': 'Pot odds ve outs değerlerimi analiz et. Matematiksel olarak call etmek mantıklı mı?',
+            'tip': 'Bu pozisyon ve fase için profesyonel bir poker ipucu ver.'
+        };
+        pokerAiInput.value = prompts[type] || '';
+        await sendPokerMessage();
+    }
+
+    // Auto-scroll log
+    const logEl = document.getElementById('actionLog');
+    if (logEl) logEl.scrollTop = logEl.scrollHeight;
+</script>
+}

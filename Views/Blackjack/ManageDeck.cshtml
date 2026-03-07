@@ -1,0 +1,822 @@
+﻿@model Blackjack.Models.BlackjackGame
+
+@{
+    ViewData["Title"] = "Oyun Yönetimi";
+    var probabilities = ViewData["Probabilities"] as Dictionary<int, double>;
+    var game = Model;
+    var cards = game.Deck.Cards;
+    var removedCards = game.RemovedCards;
+    var runningCount = game.GetRunningCount();
+    var totalOriginal = cards.Count + removedCards.Count;
+    var numberOfDecks = (int)Math.Ceiling((double)totalOriginal / 52);
+    var trueCount = game.GetTrueCount(numberOfDecks);
+
+    var groupedCards = cards
+        .GroupBy(c => c.Suit)
+        .Select(g => new
+        {
+            Suit = g.Key,
+            Ranks = g.GroupBy(c => c.Rank).Select(rg => new { Rank = rg.Key, Count = rg.Count() }).ToList()
+        })
+        .OrderBy(g => g.Suit).ToList();
+
+    var reversedRemovedCards = removedCards.AsEnumerable().Reverse().ToList();
+
+    string GetSuitSymbol(string suit) => suit switch
+    {
+        "Kupa" => "♥",
+        "Karo" => "♦",
+        "Sinek" => "♣",
+        "Maça" => "♠",
+        _ => "?"
+    };
+
+    string GetSuitClass(string suit) => suit switch
+    {
+        "Kupa" => "kupa",
+        "Karo" => "karo",
+        "Sinek" => "sinek",
+        "Maça" => "maca",
+        _ => ""
+    };
+
+    string GetCountClass(double count) => count > 0 ? "positive" : count < 0 ? "negative" : "neutral";
+
+    string[] allSuits = { "Kupa", "Karo", "Sinek", "Maça" };
+    string[] allRanks = { "2", "3", "4", "5", "6", "7", "8", "9", "10", "Vale", "Kız", "Papaz", "As" };
+}
+
+<div class="manage-container">
+    <!-- Top Bar -->
+    <div class="top-bar">
+        <div class="page-title">🃏 Blackjack Masası</div>
+        <div class="stats-bar">
+            <div class="stat-badge green">
+                <span>Kalan:</span>
+                <span class="stat-value" id="remainingCount">@cards.Count</span>
+            </div>
+            <div class="stat-badge red">
+                <span>Çıkan:</span>
+                <span class="stat-value" id="removedCount">@removedCards.Count</span>
+            </div>
+            <div class="stat-badge blue">
+                <span>Deste:</span>
+                <span class="stat-value">@numberOfDecks</span>
+            </div>
+            <div class="stat-badge amber">
+                <span>Toplam:</span>
+                <span class="stat-value">@totalOriginal</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Running Count Display -->
+    <div class="count-display">
+        <div class="count-item">
+            <span class="count-label">Running Count</span>
+            <span class="count-value @GetCountClass((double)runningCount)" id="runningCountValue">@(runningCount >= 0 ? "+" : "")@runningCount</span>
+        </div>
+        <div class="count-divider"></div>
+        <div class="count-item">
+            <span class="count-label">True Count</span>
+            <span class="count-value @GetCountClass(trueCount)" id="trueCountValue">@(trueCount >= 0 ? "+" : "")@trueCount.ToString("F1")</span>
+        </div>
+        <div class="count-divider"></div>
+        <div class="count-item">
+            <span class="count-label">Avantaj</span>
+            <span class="count-value @(trueCount > 1 ? "positive" : trueCount < -1 ? "negative" : "neutral")">
+                @(trueCount > 1 ? "👍 Oyuncu" : trueCount < -1 ? "👎 Kasa" : "😐 Nötr")
+            </span>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- AI KART ALGILAMA PANELİ -->
+    <!-- ============================================ -->
+    <div class="glass-card detect-panel">
+        <div class="detect-header">
+            <div class="section-title" style="margin-bottom:0">
+                <div class="icon purple">👁️</div>
+                AI Kart Algılama
+            </div>
+            <div class="detect-controls">
+                <button class="detect-mode-btn active" data-mode="screen" onclick="setDetectMode('screen')">🖥️ Ekran</button>
+                <button class="detect-mode-btn" data-mode="camera" onclick="setDetectMode('camera')">📷 Kamera</button>
+                <button class="detect-mode-btn" data-mode="file" onclick="setDetectMode('file')">📁 Dosya</button>
+            </div>
+        </div>
+
+        <div class="detect-body">
+            <!-- Video Preview -->
+            <div class="detect-preview">
+                <video id="detectVideo" autoplay muted playsinline></video>
+                <canvas id="detectCanvas" style="display:none;"></canvas>
+                <div id="detectPlaceholder" class="detect-placeholder">
+                    <span class="detect-placeholder-icon">👁️</span>
+                    <span>Algılamayı başlatmak için bir mod seçin</span>
+                </div>
+                <!-- File drop zone (shown in file mode) -->
+                <div id="fileDropZone" class="file-drop-zone" style="display:none;">
+                    <span class="detect-placeholder-icon">📁</span>
+                    <span>Görüntüyü sürükleyin veya tıklayın</span>
+                    <input type="file" id="fileInput" accept="image/*" style="display:none;" />
+                </div>
+            </div>
+
+            <!-- Right side: Controls + Detected Cards -->
+            <div class="detect-right">
+                <div class="detect-actions">
+                    <button id="btnStartCapture" class="btn-detect-action start" onclick="startCapture()">▶ Başlat</button>
+                    <button id="btnStopCapture" class="btn-detect-action stop" onclick="stopCapture()" style="display:none;">⏹ Durdur</button>
+                    <button id="btnScanNow" class="btn-detect-action scan" onclick="scanNow()" disabled>📸 Şimdi Tara</button>
+                </div>
+
+                <!-- Auto scan toggle -->
+                <div class="detect-option">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="autoScanToggle" onchange="toggleAutoScan()" />
+                        <span class="toggle-switch"></span>
+                        Otomatik Tara
+                    </label>
+                    <select id="scanInterval" class="form-select" style="width:auto;min-width:80px;" onchange="updateScanInterval()">
+                        <option value="3">3sn</option>
+                        <option value="5" selected>5sn</option>
+                        <option value="10">10sn</option>
+                        <option value="15">15sn</option>
+                    </select>
+                </div>
+
+                <div class="detect-option">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="autoRemoveToggle" checked />
+                        <span class="toggle-switch"></span>
+                        Otomatik Çıkar
+                    </label>
+                </div>
+
+                <!-- Detection Status -->
+                <div class="detect-status" id="detectStatus">
+                    <span class="status-dot idle"></span>
+                    <span>Hazır</span>
+                </div>
+
+                <!-- Detected Cards List -->
+                <div class="detected-cards-list" id="detectedCardsList">
+                    <!-- Dynamically populated -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Card Remove Form (Manual) -->
+    <form id="removeCardForm" class="card-form">
+        <div class="form-field">
+            <label for="suit">Takım</label>
+            <select id="suit" name="suit" class="form-select">
+                @foreach (var suit in allSuits)
+                {
+                    <option value="@suit">@GetSuitSymbol(suit) @suit</option>
+                }
+            </select>
+        </div>
+        <div class="form-field">
+            <label for="rank">Değer</label>
+            <select id="rank" name="rank" class="form-select">
+                @foreach (var rank in allRanks)
+                {
+                    <option value="@rank">@rank</option>
+                }
+            </select>
+        </div>
+        <button type="submit" class="btn-remove">🗑️ Manuel Çıkar</button>
+        <button type="button" class="btn-reset" onclick="resetDeck()">🔄 Sıfırla</button>
+    </form>
+
+    <!-- Main Grid -->
+    <div class="main-grid">
+        <!-- Left Column: Probabilities + Chart -->
+        <div>
+            <div class="glass-card">
+                <div class="section-title">
+                    <div class="icon blue">📊</div>
+                    Olasılık Tablosu
+                </div>
+                <table class="prob-table">
+                    <thead>
+                        <tr>
+                            <th style="width:60px">Değer</th>
+                            <th>Olasılık</th>
+                            <th style="width:55px">%</th>
+                        </tr>
+                    </thead>
+                    <tbody id="probabilitiesTableBody">
+                        @if (probabilities != null)
+                        {
+                            @foreach (var kvp in probabilities.OrderBy(p => p.Key))
+                            {
+                                var displayName = kvp.Key switch
+                                {
+                                    11 => "As",
+                                    _ => kvp.Key.ToString()
+                                };
+                                <tr>
+                                    <td><strong>@displayName</strong></td>
+                                    <td>
+                                        <div class="prob-bar-cell">
+                                            <div class="prob-bar-bg">
+                                                <div class="prob-bar-fill" style="width: @(kvp.Value / (probabilities.Values.Max() > 0 ? probabilities.Values.Max() : 1) * 100)%"></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td><span class="prob-value">@String.Format("{0:F1}", kvp.Value)%</span></td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+
+                <div class="chart-container">
+                    <canvas id="probChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Removed Cards -->
+            <div class="glass-card" style="margin-top: 1.25rem;">
+                <div class="section-title">
+                    <div class="icon red">🗑️</div>
+                    Çıkan Kartlar (@removedCards.Count)
+                </div>
+                <div id="removedCardsList" style="max-height: 300px; overflow-y: auto;">
+                    @if (reversedRemovedCards.Count == 0)
+                    {
+                        <p style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 1rem;">Henüz kart çıkarılmadı</p>
+                    }
+                    @foreach (var card in reversedRemovedCards)
+                    {
+                        <div class="removed-card-item">
+                            <div class="removed-card-info">
+                                <span class="suit-icon @GetSuitClass(card.Suit)">@GetSuitSymbol(card.Suit)</span>
+                                <span>@card.Rank</span>
+                            </div>
+                            <button type="button" class="btn-undo" onclick="addCardBack('@card.Suit', '@card.Rank')" title="Geri ekle">↩</button>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Middle Column: Remaining Cards -->
+        <div>
+            <div class="glass-card">
+                <div class="section-title">
+                    <div class="icon green">🃏</div>
+                    Kalan Kartlar
+                </div>
+                <div class="remaining-grid" id="remainingCardsGrid">
+                    @foreach (var suit in allSuits)
+                    {
+                        var suitGroup = groupedCards.FirstOrDefault(g => g.Suit == suit);
+                        <div class="suit-header">
+                            <span class="suit-icon @GetSuitClass(suit)">@GetSuitSymbol(suit)</span>
+                            @suit
+                        </div>
+                        @foreach (var rank in allRanks)
+                        {
+                            var rankData = suitGroup?.Ranks.FirstOrDefault(r => r.Rank == rank);
+                            var count = rankData?.Count ?? 0;
+                            <div class="card-chip @(count == 0 ? "zero" : "")">
+                                <span class="suit-icon @GetSuitClass(suit)" style="font-size: 0.65rem;">@GetSuitSymbol(suit)</span>
+                                <span class="card-rank">@rank</span>
+                                <span class="card-count">×@count</span>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: AI Chat Panel -->
+        <div class="glass-card ai-panel">
+            <div class="ai-header">
+                <div class="ai-avatar">🤖</div>
+                <div class="ai-header-text">
+                    <h3>AI Strateji Danışmanı</h3>
+                    <p>OpenRouter ile güçlendirilmiştir</p>
+                </div>
+            </div>
+
+            <div class="ai-messages" id="aiMessages">
+                <div class="ai-msg system">
+                    👋 Merhaba! Ben AI Blackjack danışmanınım. Aşağıdaki hızlı butonları kullanabilir veya bana soru sorabilirsiniz.
+                </div>
+            </div>
+
+            <div class="ai-quick-actions">
+                <button class="btn-quick" onclick="askAI('strategy')">🎯 Strateji Öner</button>
+                <button class="btn-quick" onclick="askAI('count')">🔢 Count Analizi</button>
+                <button class="btn-quick" onclick="askAI('risk')">⚠️ Risk Analizi</button>
+                <button class="btn-quick" onclick="askAI('tip')">💡 İpucu Ver</button>
+            </div>
+
+            <div class="ai-input-area">
+                <input type="text" class="ai-input" id="aiInput" placeholder="AI'ya bir soru sor..."
+                       onkeydown="if(event.key==='Enter') sendMessage()" />
+                <button class="btn-send" id="btnSend" onclick="sendMessage()">➤</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+    // =============================================
+    // Chart.js — Probability Chart
+    // =============================================
+    const probData = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(
+        probabilities?.OrderBy(p => p.Key).ToDictionary(p => p.Key == 11 ? "As" : p.Key.ToString(), p => Math.Round(p.Value, 2))
+        ?? new Dictionary<string, double>()
+    ));
+
+    const ctx = document.getElementById('probChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: Object.keys(probData),
+            datasets: [{
+                label: 'Olasılık %',
+                data: Object.values(probData),
+                backgroundColor: [
+                    'rgba(59,130,246,0.6)', 'rgba(99,102,241,0.6)', 'rgba(139,92,246,0.6)',
+                    'rgba(168,85,247,0.6)', 'rgba(192,132,252,0.6)', 'rgba(147,51,234,0.6)',
+                    'rgba(124,58,237,0.6)', 'rgba(109,40,217,0.6)', 'rgba(91,33,182,0.6)',
+                    'rgba(16,185,129,0.6)'
+                ],
+                borderColor: [
+                    'rgba(59,130,246,1)', 'rgba(99,102,241,1)', 'rgba(139,92,246,1)',
+                    'rgba(168,85,247,1)', 'rgba(192,132,252,1)', 'rgba(147,51,234,1)',
+                    'rgba(124,58,237,1)', 'rgba(109,40,217,1)', 'rgba(91,33,182,1)',
+                    'rgba(16,185,129,1)'
+                ],
+                borderWidth: 1,
+                borderRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(17,24,39,0.95)',
+                    titleColor: '#f1f5f9',
+                    bodyColor: '#94a3b8',
+                    borderColor: 'rgba(255,255,255,0.1)',
+                    borderWidth: 1,
+                    padding: 10,
+                    cornerRadius: 8
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#64748b', font: { weight: '600' } },
+                    grid: { display: false },
+                    border: { display: false }
+                },
+                y: {
+                    ticks: { color: '#64748b', callback: v => v + '%' },
+                    grid: { color: 'rgba(255,255,255,0.04)' },
+                    border: { display: false }
+                }
+            }
+        }
+    });
+
+    // =============================================
+    // Card Remove / Add Back (Manual)
+    // =============================================
+    document.getElementById('removeCardForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const suit = document.getElementById('suit').value;
+        const rank = document.getElementById('rank').value;
+
+        fetch('@Url.Action("RemoveCard", "Blackjack")', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `suit=${encodeURIComponent(suit)}&rank=${encodeURIComponent(rank)}`
+        }).then(() => location.reload());
+    });
+
+    function addCardBack(suit, rank) {
+        fetch('@Url.Action("AddCardBack", "Blackjack")', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `suit=${encodeURIComponent(suit)}&rank=${encodeURIComponent(rank)}`
+        }).then(() => location.reload());
+    }
+
+    function resetDeck() {
+        if (confirm('Desteyi sıfırlamak istediğinizden emin misiniz?')) {
+            fetch('@Url.Action("ResetDeck", "Blackjack")', { method: 'POST' })
+                .then(() => { window.location.href = '@Url.Action("Index", "Blackjack")'; });
+        }
+    }
+
+    // =============================================
+    // AI Chat
+    // =============================================
+    const messagesDiv = document.getElementById('aiMessages');
+    const aiInput = document.getElementById('aiInput');
+    const btnSend = document.getElementById('btnSend');
+
+    function addMessage(text, role) {
+        const msg = document.createElement('div');
+        msg.className = `ai-msg ${role}`;
+        msg.innerHTML = text;
+        messagesDiv.appendChild(msg);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    function showTyping() {
+        const typing = document.createElement('div');
+        typing.className = 'ai-msg assistant';
+        typing.id = 'typingIndicator';
+        typing.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
+        messagesDiv.appendChild(typing);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    function removeTyping() {
+        const el = document.getElementById('typingIndicator');
+        if (el) el.remove();
+    }
+
+    function getGameState() {
+        return {
+            remainingCards: @cards.Count,
+            removedCards: @removedCards.Count,
+            runningCount: @runningCount,
+            trueCount: @trueCount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
+            probabilities: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(
+                probabilities?.ToDictionary(p => p.Key.ToString(), p => Math.Round(p.Value, 2))
+                ?? new Dictionary<string, double>()
+            )),
+            removedCardsList: '@string.Join(", ", reversedRemovedCards.Take(20).Select(c => GetSuitSymbol(c.Suit) + c.Rank))'
+        };
+    }
+
+    async function sendMessage() {
+        const text = aiInput.value.trim();
+        if (!text) return;
+
+        addMessage(text, 'user');
+        aiInput.value = '';
+        btnSend.disabled = true;
+        showTyping();
+
+        try {
+            const response = await fetch('@Url.Action("Chat", "AI")', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: text, gameState: getGameState() })
+            });
+
+            removeTyping();
+            const data = await response.json();
+            if (data.success) {
+                addMessage(data.response, 'assistant');
+            } else {
+                addMessage('❌ ' + (data.error || 'Bir hata oluştu'), 'system');
+            }
+        } catch (err) {
+            removeTyping();
+            addMessage('❌ Bağlantı hatası. Lütfen API key ayarlarını kontrol edin.', 'system');
+        }
+
+        btnSend.disabled = false;
+        aiInput.focus();
+    }
+
+    async function askAI(type) {
+        const prompts = {
+            'strategy': 'Mevcut oyun durumuna göre bana strateji öner. Hit mi yoksa Stand mı yapmalıyım?',
+            'count': 'Running count ve true count değerlerini analiz et. Bu ne anlama geliyor?',
+            'risk': 'Mevcut durumda risk analizini yap. Bust olma olasılığım nedir?',
+            'tip': 'Blackjack ile ilgili profesyonel bir ipucu ver.'
+        };
+        aiInput.value = prompts[type] || '';
+        await sendMessage();
+    }
+
+    // =============================================
+    // AI KART ALGILAMA SİSTEMİ
+    // =============================================
+    let detectMode = 'screen';
+    let mediaStream = null;
+    let autoScanTimer = null;
+    let isScanning = false;
+    let previouslyDetected = new Set();
+
+    const detectVideo = document.getElementById('detectVideo');
+    const detectCanvas = document.getElementById('detectCanvas');
+    const detectPlaceholder = document.getElementById('detectPlaceholder');
+    const fileDropZone = document.getElementById('fileDropZone');
+    const fileInput = document.getElementById('fileInput');
+    const btnStartCapture = document.getElementById('btnStartCapture');
+    const btnStopCapture = document.getElementById('btnStopCapture');
+    const btnScanNow = document.getElementById('btnScanNow');
+    const detectStatus = document.getElementById('detectStatus');
+    const detectedCardsList = document.getElementById('detectedCardsList');
+
+    function setDetectMode(mode) {
+        detectMode = mode;
+        stopCapture();
+
+        // Update buttons
+        document.querySelectorAll('.detect-mode-btn').forEach(b => b.classList.remove('active'));
+        document.querySelector(`[data-mode="${mode}"]`).classList.add('active');
+
+        // Show/hide elements
+        detectPlaceholder.style.display = mode === 'file' ? 'none' : 'flex';
+        fileDropZone.style.display = mode === 'file' ? 'flex' : 'none';
+        detectVideo.style.display = 'none';
+        btnStartCapture.style.display = mode === 'file' ? 'none' : '';
+        btnStartCapture.textContent = mode === 'screen' ? '🖥️ Ekran Yakala' : '📷 Kamerayı Aç';
+    }
+
+    async function startCapture() {
+        try {
+            if (detectMode === 'screen') {
+                mediaStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { cursor: 'always' },
+                    audio: false
+                });
+            } else if (detectMode === 'camera') {
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+                    audio: false
+                });
+            }
+
+            detectVideo.srcObject = mediaStream;
+            detectVideo.style.display = 'block';
+            detectPlaceholder.style.display = 'none';
+            btnStartCapture.style.display = 'none';
+            btnStopCapture.style.display = '';
+            btnScanNow.disabled = false;
+
+            updateStatus('capturing', 'Yakalama aktif');
+
+            // Handle stream end (user closes share dialog)
+            mediaStream.getVideoTracks()[0].onended = () => stopCapture();
+
+        } catch (err) {
+            console.error('Capture error:', err);
+            updateStatus('error', 'İzin reddedildi: ' + err.message);
+        }
+    }
+
+    function stopCapture() {
+        if (mediaStream) {
+            mediaStream.getTracks().forEach(t => t.stop());
+            mediaStream = null;
+        }
+        detectVideo.srcObject = null;
+        detectVideo.style.display = 'none';
+        
+        if (detectMode !== 'file') {
+            detectPlaceholder.style.display = 'flex';
+        }
+        
+        btnStartCapture.style.display = detectMode === 'file' ? 'none' : '';
+        btnStopCapture.style.display = 'none';
+        btnScanNow.disabled = true;
+        
+        if (autoScanTimer) {
+            clearInterval(autoScanTimer);
+            autoScanTimer = null;
+            document.getElementById('autoScanToggle').checked = false;
+        }
+        
+        updateStatus('idle', 'Durduruldu');
+    }
+
+    function captureFrame() {
+        if (!mediaStream && detectMode !== 'file') return null;
+
+        const canvas = detectCanvas;
+        const video = detectVideo;
+
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
+
+        return canvas.toDataURL('image/jpeg', 0.8);
+    }
+
+    async function scanNow() {
+        if (isScanning) return;
+        isScanning = true;
+
+        updateStatus('scanning', 'AI analiz ediyor...');
+        btnScanNow.disabled = true;
+
+        let imageData;
+
+        if (detectMode === 'file') {
+            // File mode — use the last loaded image
+            const fileCanvas = document.getElementById('detectCanvas');
+            imageData = fileCanvas.toDataURL('image/jpeg', 0.8);
+        } else {
+            imageData = captureFrame();
+        }
+
+        if (!imageData) {
+            updateStatus('error', 'Görüntü alınamadı');
+            isScanning = false;
+            btnScanNow.disabled = false;
+            return;
+        }
+
+        try {
+            const response = await fetch('@Url.Action("DetectCards", "AI")', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: imageData })
+            });
+
+            const data = await response.json();
+
+            if (data.success && data.cards && data.cards.length > 0) {
+                // Filter out already-detected cards
+                const newCards = data.cards.filter(c => {
+                    const key = `${c.suit}-${c.rank}`;
+                    return !previouslyDetected.has(key);
+                });
+
+                if (newCards.length > 0) {
+                    const autoRemove = document.getElementById('autoRemoveToggle').checked;
+                    if (autoRemove) {
+                        await removeDetectedCards(newCards);
+                    } else {
+                        displayDetectedCards(newCards);
+                    }
+                    updateStatus('success', `${newCards.length} yeni kart algılandı!`);
+                } else {
+                    updateStatus('idle', 'Yeni kart yok');
+                }
+            } else {
+                updateStatus('idle', data.message || 'Kart algılanamadı');
+            }
+        } catch (err) {
+            console.error('Scan error:', err);
+            updateStatus('error', 'Tarama hatası');
+        }
+
+        isScanning = false;
+        btnScanNow.disabled = !(mediaStream || detectMode === 'file');
+    }
+
+    async function removeDetectedCards(cards) {
+        try {
+            const response = await fetch('@Url.Action("RemoveCards", "Blackjack")', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cards })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                // Mark as detected
+                cards.forEach(c => previouslyDetected.add(`${c.suit}-${c.rank}`));
+
+                // Show what was removed
+                displayDetectedCards(cards, true);
+
+                // Reload to update all views
+                setTimeout(() => location.reload(), 1500);
+            }
+        } catch (err) {
+            console.error('Remove cards error:', err);
+        }
+    }
+
+    function displayDetectedCards(cards, alreadyRemoved = false) {
+        cards.forEach(card => {
+            const suitSymbols = { 'Kupa': '♥', 'Karo': '♦', 'Sinek': '♣', 'Maça': '♠' };
+            const suitClasses = { 'Kupa': 'kupa', 'Karo': 'karo', 'Sinek': 'sinek', 'Maça': 'maca' };
+
+            const item = document.createElement('div');
+            item.className = 'detected-card-item' + (alreadyRemoved ? ' removed' : '');
+            item.innerHTML = `
+                <div class="removed-card-info">
+                    <span class="suit-icon ${suitClasses[card.suit] || ''}">${suitSymbols[card.suit] || '?'}</span>
+                    <span>${card.rank}</span>
+                </div>
+                ${alreadyRemoved
+                    ? '<span class="detect-badge removed">✓ Çıkarıldı</span>'
+                    : `<button class="btn-detect-confirm" onclick="confirmRemove(this, '${card.suit}', '${card.rank}')">Çıkar</button>`
+                }
+            `;
+            detectedCardsList.insertBefore(item, detectedCardsList.firstChild);
+        });
+    }
+
+    async function confirmRemove(btn, suit, rank) {
+        btn.disabled = true;
+        btn.textContent = '...';
+        await removeDetectedCards([{ suit, rank }]);
+    }
+
+    function toggleAutoScan() {
+        const enabled = document.getElementById('autoScanToggle').checked;
+        if (enabled && (mediaStream || detectMode === 'file')) {
+            const interval = parseInt(document.getElementById('scanInterval').value) * 1000;
+            autoScanTimer = setInterval(() => scanNow(), interval);
+            updateStatus('auto', `Otomatik tarama (${interval/1000}sn)`);
+        } else {
+            if (autoScanTimer) {
+                clearInterval(autoScanTimer);
+                autoScanTimer = null;
+            }
+            document.getElementById('autoScanToggle').checked = false;
+            if (mediaStream) updateStatus('capturing', 'Yakalama aktif');
+        }
+    }
+
+    function updateScanInterval() {
+        if (autoScanTimer) {
+            clearInterval(autoScanTimer);
+            const interval = parseInt(document.getElementById('scanInterval').value) * 1000;
+            autoScanTimer = setInterval(() => scanNow(), interval);
+            updateStatus('auto', `Otomatik tarama (${interval/1000}sn)`);
+        }
+    }
+
+    function updateStatus(state, text) {
+        const dot = detectStatus.querySelector('.status-dot');
+        dot.className = 'status-dot ' + state;
+        detectStatus.querySelector('span:last-child').textContent = text;
+    }
+
+    // File mode handlers
+    fileDropZone.addEventListener('click', () => fileInput.click());
+    fileDropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        fileDropZone.classList.add('drag-over');
+    });
+    fileDropZone.addEventListener('dragleave', () => {
+        fileDropZone.classList.remove('drag-over');
+    });
+    fileDropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        fileDropZone.classList.remove('drag-over');
+        if (e.dataTransfer.files.length > 0) loadImageFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) loadImageFile(e.target.files[0]);
+    });
+
+    function loadImageFile(file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const img = new Image();
+            img.onload = function() {
+                const canvas = detectCanvas;
+                canvas.width = img.width;
+                canvas.height = img.height;
+                canvas.getContext('2d').drawImage(img, 0, 0);
+
+                // Show preview
+                canvas.style.display = 'block';
+                fileDropZone.style.display = 'none';
+                btnScanNow.disabled = false;
+
+                updateStatus('idle', 'Görüntü yüklendi — Tara butonuna bas');
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // Clipboard paste support
+    document.addEventListener('paste', (e) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (const item of items) {
+            if (item.type.startsWith('image/')) {
+                e.preventDefault();
+                const file = item.getAsFile();
+                if (file) {
+                    setDetectMode('file');
+                    loadImageFile(file);
+                }
+                break;
+            }
+        }
+    });
+</script>
+}

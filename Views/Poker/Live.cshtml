@@ -1,0 +1,888 @@
+@{
+    ViewData["Title"] = "Poker Canlı Mod";
+}
+
+<div class="poker-live-container">
+    <!-- Top Bar -->
+    <div class="poker-top-bar">
+        <div class="poker-logo">🔴 Canlı Poker Analiz</div>
+        <div class="poker-stats-bar">
+            <div class="stat-badge green">
+                <span>Fase:</span>
+                <span class="stat-value" id="livePhase">Pre-Flop</span>
+            </div>
+            <div class="stat-badge amber" id="liveHandBadge" style="display:none">
+                <span>El:</span>
+                <span class="stat-value" id="liveHandResult">—</span>
+            </div>
+        </div>
+        <a href="@Url.Action("Index", "Poker")" class="btn-reset-poker">🏠 Lobiye Dön</a>
+    </div>
+
+    <div class="live-main-grid">
+        <!-- LEFT COLUMN: Detection + Cards -->
+        <div class="live-left-col">
+            <!-- Card Detection Panel -->
+            <div class="glass-card detect-panel-live">
+                <div class="section-title">
+                    <div class="icon blue">📸</div>
+                    Kart Algılama
+                </div>
+
+                <div class="detect-mode-row">
+                    <button class="detect-mode-btn active" data-mode="screen" onclick="setLiveDetectMode('screen')">🖥️
+                        Ekran</button>
+                        <button class="detect-mode-btn" data-mode="camera" onclick="setLiveDetectMode('camera')">📷
+                            Kamera</button>
+                            <button class="detect-mode-btn" data-mode="file" onclick="setLiveDetectMode('file')">📁
+                                Dosya</button>
+                            </div>
+
+                            <div class="detect-preview-area">
+                                <div class="detect-placeholder" id="livePlaceholder">
+                                    <span style="font-size:2rem">📸</span>
+                                    <span>Algılama kaynağını seçin ve başlatın</span>
+                                </div>
+                                <video id="liveVideo" autoplay playsinline
+                                       style="display:none; width:100%; border-radius:8px"></video>
+                                <canvas id="liveCanvas" style="display:none; width:100%; border-radius:8px"></canvas>
+                                <div class="file-drop-zone" id="liveFileZone" style="display:none">
+                                    <span style="font-size:1.5rem">📁</span>
+                                    <span>Sürükle bırak veya tıkla</span>
+                                    <input type="file" id="liveFileInput" accept="image/*" style="display:none" />
+                                </div>
+                            </div>
+
+                            <div class="detect-controls">
+                                <button class="btn-action call" id="btnLiveStart" onclick="startLiveCapture()">▶️ Başlat</button>
+                                <button class="btn-action fold" id="btnLiveStop" onclick="stopLiveCapture()" style="display:none">⏹️
+                                    Durdur</button>
+                                    <button class="btn-action raise" id="btnLiveScan" onclick="liveScanNow()" disabled>🔍 Tara</button>
+                                    <div class="detect-status" id="liveStatus">
+                                        <span class="status-dot idle"></span>
+                                        <span>Hazır</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Manual Card Entry -->
+                            <div class="glass-card">
+                                <div class="section-title">
+                                    <div class="icon green">✏️</div>
+                                    Manuel Kart Ekle
+                                </div>
+                                <div class="manual-card-form">
+                                    <select id="manualSuit" class="form-select">
+                                        <option value="Kupa">♥ Kupa</option>
+                                        <option value="Karo">♦ Karo</option>
+                                        <option value="Sinek">♣ Sinek</option>
+                                        <option value="Maça">♠ Maça</option>
+                                    </select>
+                                    <select id="manualRank" class="form-select">
+                                        <option value="As">As</option>
+                                        <option value="Papaz">Papaz</option>
+                                        <option value="Kız">Kız</option>
+                                        <option value="Vale">Vale</option>
+                                        <option value="10">10</option>
+                                        <option value="9">9</option>
+                                        <option value="8">8</option>
+                                        <option value="7">7</option>
+                                        <option value="6">6</option>
+                                        <option value="5">5</option>
+                                        <option value="4">4</option>
+                                        <option value="3">3</option>
+                                        <option value="2">2</option>
+                                    </select>
+                                    <button class="btn-action raise" onclick="addManualCard('hole')">🃏 Hole</button>
+                                    <button class="btn-action call" onclick="addManualCard('community')">🂠 Community</button>
+                                </div>
+                            </div>
+
+                            <!-- Detected Cards Waiting Area -->
+                            <div class="glass-card" id="detectedCardsArea" style="display:none">
+                                <div class="section-title">
+                                    <div class="icon amber">✨</div>
+                                    AI Tarafından Algılanan Kartlar
+                                    <button class="btn-clear-cards" onclick="clearDetectedCards()">❌</button>
+                                </div>
+                                <div style="margin-bottom:0.5rem; font-size:0.85rem; opacity:0.8;">
+                                    👇 Kartları tıklayarak Hole veya Community'ye ekleyin
+                                </div>
+                                <div id="detectedCardsList" style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.8rem;">
+                                </div>
+                                <div style="display:flex; gap:0.5rem;">
+                                    <button class="btn-action call" onclick="autoAssignDetected()">⚡ Otomatik Ata</button>
+                                    <button class="btn-action fold" onclick="clearDetectedCards()">🗑️ İptal</button>
+                                </div>
+                            </div>
+
+                            <!-- Detected Cards Display -->
+                            <div class="glass-card">
+                                <div class="section-title">
+                                    <div class="icon amber">🃏</div>
+                                    Algılanan Kartlar
+                                    <button class="btn-clear-cards" onclick="clearAllCards()">🗑️ Temizle</button>
+                                </div>
+
+                                <div class="card-slots-section">
+                                    <h4 class="slot-label">Hole Cards (Elin)</h4>
+                                    <div class="card-slots" id="holeCardSlots">
+                                        <div class="card-slot empty" data-index="0">
+                                            <span class="slot-placeholder">1</span>
+                                        </div>
+                                        <div class="card-slot empty" data-index="1">
+                                            <span class="slot-placeholder">2</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="card-slots-section">
+                                    <h4 class="slot-label">Community Cards (Masa)</h4>
+                                    <div class="card-slots" id="communityCardSlots">
+                                        <div class="card-slot empty" data-index="0">
+                                            <span class="slot-placeholder">F1</span>
+                                        </div>
+                                        <div class="card-slot empty" data-index="1">
+                                            <span class="slot-placeholder">F2</span>
+                                        </div>
+                                        <div class="card-slot empty" data-index="2">
+                                            <span class="slot-placeholder">F3</span>
+                                        </div>
+                                        <div class="card-slot empty" data-index="3">
+                                            <span class="slot-placeholder">T</span>
+                                        </div>
+                                        <div class="card-slot empty" data-index="4">
+                                            <span class="slot-placeholder">R</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Game Settings -->
+                            <div class="glass-card">
+                                <div class="section-title">
+                                    <div class="icon purple">⚙️</div>
+                                    Oyun Ayarları
+                                </div>
+                                <div class="live-settings-grid">
+                                    <div class="setting-item">
+                                        <label>Pot Büyüklüğü</label>
+                                        <input type="number" id="settingPot" class="form-input-live" value="100" min="0"
+                                               onchange="runAnalysis()" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Current Bet</label>
+                                        <input type="number" id="settingBet" class="form-input-live" value="20" min="0"
+                                               onchange="runAnalysis()" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Stack Size</label>
+                                        <input type="number" id="settingStack" class="form-input-live" value="1000" min="0"
+                                               onchange="runAnalysis()" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Rakip Sayısı</label>
+                                        <input type="number" id="settingOpponents" class="form-input-live" value="3" min="1" max="9"
+                                               onchange="runAnalysis()" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- RIGHT COLUMN: Strategy + AI -->
+                        <div class="live-right-col">
+                            <!-- Strategy Panel -->
+                            <div class="glass-card strategy-panel" id="strategyPanel">
+                                <div class="section-title">
+                                    <div class="icon purple">🧠</div>
+                                    Strateji Analizi
+                                </div>
+
+                                <div id="strategyContent">
+                                    <div class="strategy-empty">
+                                        <span style="font-size:2rem">🃏</span>
+                                        <p>En az 2 hole card ekleyin — strateji otomatik hesaplanacak</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- AI Coach Panel -->
+                            <div class="glass-card ai-panel poker-ai">
+                                <div class="ai-header">
+                                    <div class="ai-avatar">🤖</div>
+                                    <div class="ai-header-text">
+                                        <h3>AI Poker Koçu</h3>
+                                        <p>Canlı strateji danışmanı</p>
+                                    </div>
+                                </div>
+
+                                <div class="ai-messages" id="liveAiMessages">
+                                    <div class="ai-msg system">
+                                        👋 Canlı moda hoş geldiniz! Kartları algılatın veya manuel ekleyin, anlık strateji analizi alın.
+                                        Sorularınızı yazabilirsiniz.
+                                    </div>
+                                </div>
+
+                                <div class="ai-quick-actions">
+                                    <button class="btn-quick" onclick="askLiveAI('strategy')">🎯 Strateji</button>
+                                    <button class="btn-quick" onclick="askLiveAI('hand')">🃏 El Analizi</button>
+                                    <button class="btn-quick" onclick="askLiveAI('odds')">📊 Odds</button>
+                                    <button class="btn-quick" onclick="askLiveAI('bluff')">🎭 Blöf</button>
+                                </div>
+
+                                <div class="ai-input-area">
+                                    <input type="text" class="ai-input" id="liveAiInput" placeholder="AI'ya poker sorusu sor..."
+                                           onkeydown="if(event.key==='Enter') sendLiveAIMessage()" />
+                                    <button class="btn-send" id="btnLiveAiSend" onclick="sendLiveAIMessage()">➤</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                    <script>
+                                            // =============================================
+                                            // State
+                                            // =============================================
+                                            let liveHoleCards = [];
+                                            let liveCommunityCards = [];
+                                            let detectedCards = []; // AI tarafından algılanan kartlar (bekleme alanı)
+                                            let liveDetectMode = 'screen';
+                                            let liveMediaStream = null;
+                                            let liveIsScanning = false;
+                                            let lastAiContext = '';
+
+                                            const suitSymbols = { 'Kupa': '♥', 'Karo': '♦', 'Sinek': '♣', 'Maça': '♠' };
+                                            const suitClasses = { 'Kupa': 'kupa', 'Karo': 'karo', 'Sinek': 'sinek', 'Maça': 'maca' };
+
+                                            // =============================================
+                                            // Card Detection (Same pattern as Blackjack)
+                                            // =============================================
+                                            const liveVideo = document.getElementById('liveVideo');
+                                            const liveCanvas = document.getElementById('liveCanvas');
+                                            const livePlaceholder = document.getElementById('livePlaceholder');
+                                            const liveFileZone = document.getElementById('liveFileZone');
+                                            const liveFileInput = document.getElementById('liveFileInput');
+
+                                            function setLiveDetectMode(mode) {
+                                                liveDetectMode = mode;
+                                                stopLiveCapture();
+                                                document.querySelectorAll('.detect-mode-btn').forEach(b => b.classList.remove('active'));
+                                                document.querySelector(`[data-mode="${mode}"]`).classList.add('active');
+
+                                                livePlaceholder.style.display = mode === 'file' ? 'none' : 'flex';
+                                                liveFileZone.style.display = mode === 'file' ? 'flex' : 'none';
+                                                liveVideo.style.display = 'none';
+                                                liveCanvas.style.display = 'none';
+                                                document.getElementById('btnLiveStart').style.display = mode === 'file' ? 'none' : '';
+                                                document.getElementById('btnLiveStart').textContent = mode === 'screen' ? '🖥️ Ekranı Yakala' : '📷 Kamerayı Aç';
+                                            }
+
+                                            async function startLiveCapture() {
+                                                try {
+                                                    if (liveDetectMode === 'screen') {
+                                                        liveMediaStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: 'always' }, audio: false });
+                                                    } else {
+                                                        liveMediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+                                                    }
+                                                    liveVideo.srcObject = liveMediaStream;
+                                                    liveVideo.style.display = 'block';
+                                                    livePlaceholder.style.display = 'none';
+                                                    document.getElementById('btnLiveStart').style.display = 'none';
+                                                    document.getElementById('btnLiveStop').style.display = '';
+                                                    document.getElementById('btnLiveScan').disabled = false;
+                                                    updateLiveStatus('capturing', 'Yakalama aktif');
+                                                    liveMediaStream.getVideoTracks()[0].onended = () => stopLiveCapture();
+                                                } catch (err) {
+                                                    updateLiveStatus('error', 'İzin reddedildi: ' + err.message);
+                                                }
+                                            }
+
+                                            function stopLiveCapture() {
+                                                if (liveMediaStream) {
+                                                    liveMediaStream.getTracks().forEach(t => t.stop());
+                                                    liveMediaStream = null;
+                                                }
+                                                liveVideo.srcObject = null;
+                                                liveVideo.style.display = 'none';
+                                                if (liveDetectMode !== 'file') livePlaceholder.style.display = 'flex';
+                                                document.getElementById('btnLiveStart').style.display = liveDetectMode === 'file' ? 'none' : '';
+                                                document.getElementById('btnLiveStop').style.display = 'none';
+                                                document.getElementById('btnLiveScan').disabled = true;
+                                                updateLiveStatus('idle', 'Durduruldu');
+                                            }
+
+                                            function captureLiveFrame() {
+                                                if (!liveMediaStream && liveDetectMode !== 'file') return null;
+                                                liveCanvas.width = liveVideo.videoWidth;
+                                                liveCanvas.height = liveVideo.videoHeight;
+                                                liveCanvas.getContext('2d').drawImage(liveVideo, 0, 0);
+                                                return liveCanvas.toDataURL('image/jpeg', 0.8);
+                                            }
+
+                                            async function liveScanNow() {
+                                                if (liveIsScanning) return;
+                                                liveIsScanning = true;
+                                                updateLiveStatus('scanning', 'AI analiz ediyor...');
+                                                document.getElementById('btnLiveScan').disabled = true;
+
+                                                let imageData;
+                                                if (liveDetectMode === 'file') {
+                                                    imageData = liveCanvas.toDataURL('image/jpeg', 0.8);
+                                                } else {
+                                                    imageData = captureLiveFrame();
+                                                }
+
+                                                if (!imageData) {
+                                                    updateLiveStatus('error', 'Görüntü alınamadı');
+                                                    liveIsScanning = false;
+                                                    document.getElementById('btnLiveScan').disabled = false;
+                                                    return;
+                                                }
+
+                                                try {
+                                                    const response = await fetch('@Url.Action("DetectCards", "AI")', {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify({ image: imageData })
+                                                    });
+
+                                                    const data = await response.json();
+                                                    if (data.success && data.cards && data.cards.length > 0) {
+                                                        // Kartları bekleme alanında göster
+                                                        showDetectedCards(data.cards);
+                                                    } else {
+                                                        updateLiveStatus('idle', data.message || 'Kart algılanamadı');
+                                                    }
+                                                } catch (err) {
+                                                    updateLiveStatus('error', 'Tarama hatası');
+                                                }
+
+                                                liveIsScanning = false;
+                                                document.getElementById('btnLiveScan').disabled = !(liveMediaStream || liveDetectMode === 'file');
+                                            }
+
+                                            function updateLiveStatus(state, text) {
+                                                const el = document.getElementById('liveStatus');
+                                                el.querySelector('.status-dot').className = 'status-dot ' + state;
+                                                el.querySelector('span:last-child').textContent = text;
+                                            }
+
+                                            // File mode handlers
+                                            liveFileZone.addEventListener('click', () => liveFileInput.click());
+                                            liveFileZone.addEventListener('dragover', (e) => { e.preventDefault(); liveFileZone.classList.add('drag-over'); });
+                                            liveFileZone.addEventListener('dragleave', () => liveFileZone.classList.remove('drag-over'));
+                                            liveFileZone.addEventListener('drop', (e) => {
+                                                e.preventDefault();
+                                                liveFileZone.classList.remove('drag-over');
+                                                if (e.dataTransfer.files.length > 0) loadLiveImage(e.dataTransfer.files[0]);
+                                            });
+                                            liveFileInput.addEventListener('change', (e) => {
+                                                if (e.target.files.length > 0) loadLiveImage(e.target.files[0]);
+                                            });
+
+                                            function loadLiveImage(file) {
+                                                const reader = new FileReader();
+                                                reader.onload = function (e) {
+                                                    const img = new Image();
+                                                    img.onload = function () {
+                                                        liveCanvas.width = img.width;
+                                                        liveCanvas.height = img.height;
+                                                        liveCanvas.getContext('2d').drawImage(img, 0, 0);
+                                                        liveCanvas.style.display = 'block';
+                                                        liveFileZone.style.display = 'none';
+                                                        document.getElementById('btnLiveScan').disabled = false;
+                                                        updateLiveStatus('idle', 'Görüntü yüklendi — Tara butonuna bas');
+                                                    };
+                                                    img.src = e.target.result;
+                                                };
+                                                reader.readAsDataURL(file);
+                                            }
+
+                                            // =============================================
+                                            // Card Management
+                                            // =============================================
+                                            
+                                            // AI tarafından algılanan kartları bekleme alanında göster
+                                            function showDetectedCards(cards) {
+                                                // Sadece yeni kartları (duplike olmayanları) ekle
+                                                detectedCards = cards.filter(card => !isDuplicate(card));
+                                                
+                                                if (detectedCards.length === 0) {
+                                                    updateLiveStatus('idle', 'Tüm kartlar zaten eklenmiş');
+                                                    return;
+                                                }
+                                                
+                                                renderDetectedCards();
+                                                document.getElementById('detectedCardsArea').style.display = 'block';
+                                                updateLiveStatus('success', `${detectedCards.length} yeni kart algılandı - tıklayarak atayın`);
+                                            }
+                                            
+                                            // Algılanan kartları bekleme alanında render et
+                                            function renderDetectedCards() {
+                                                const container = document.getElementById('detectedCardsList');
+                                                container.innerHTML = '';
+                                                
+                                                detectedCards.forEach((card, index) => {
+                                                    const cardDiv = document.createElement('div');
+                                                    cardDiv.className = `card-slot filled ${suitClasses[card.suit]}`;
+                                                    cardDiv.style.cursor = 'pointer';
+                                                    cardDiv.style.position = 'relative';
+                                                    cardDiv.innerHTML = `
+                                                        <span class="slot-rank">${card.rank}</span>
+                                                        <span class="slot-suit">${suitSymbols[card.suit]}</span>
+                                                        <div style="position:absolute; bottom:2px; font-size:0.6rem; width:100%; text-align:center; opacity:0.7;">
+                                                            tıkla
+                                                        </div>
+                                                    `;
+                                                    
+                                                    // Karta tıklanınca seçenek menüsü göster
+                                                    cardDiv.onclick = () => showCardAssignMenu(card, index);
+                                                    
+                                                    container.appendChild(cardDiv);
+                                                });
+                                            }
+                                            
+                                            // Kart atama menüsü göster
+                                            function showCardAssignMenu(card, index) {
+                                                const menu = document.createElement('div');
+                                                menu.style.cssText = `
+                                                    position: fixed;
+                                                    top: 50%;
+                                                    left: 50%;
+                                                    transform: translate(-50%, -50%);
+                                                    background: rgba(20, 30, 48, 0.98);
+                                                    padding: 1.5rem;
+                                                    border-radius: 12px;
+                                                    border: 2px solid rgba(255,255,255,0.1);
+                                                    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+                                                    z-index: 9999;
+                                                    min-width: 250px;
+                                                `;
+                                                
+                                                menu.innerHTML = `
+                                                    <div style="text-align:center; margin-bottom:1rem;">
+                                                        <div class="card-slot filled ${suitClasses[card.suit]}" style="display:inline-block; margin-bottom:0.5rem;">
+                                                            <span class="slot-rank">${card.rank}</span>
+                                                            <span class="slot-suit">${suitSymbols[card.suit]}</span>
+                                                        </div>
+                                                        <div style="font-size:0.9rem; opacity:0.8;">Bu kartı nereye eklemek istersiniz?</div>
+                                                    </div>
+                                                    <button class="btn-action call" style="width:100%; margin-bottom:0.5rem;" onclick="assignCardTo(${index}, 'hole')">
+                                                        🃏 Hole Cards (Elin)
+                                                    </button>
+                                                    <button class="btn-action raise" style="width:100%; margin-bottom:0.5rem;" onclick="assignCardTo(${index}, 'community')">
+                                                        🂠 Community Cards (Masa)
+                                                    </button>
+                                                    <button class="btn-action fold" style="width:100%;" onclick="closeCardMenu()">
+                                                        ❌ İptal
+                                                    </button>
+                                                `;
+                                                
+                                                document.body.appendChild(menu);
+                                                menu.id = 'cardAssignMenu';
+                                            }
+                                            
+                                            // Menüyü kapat
+                                            function closeCardMenu() {
+                                                const menu = document.getElementById('cardAssignMenu');
+                                                if (menu) menu.remove();
+                                            }
+                                            
+                                            // Kartı seçilen yere ata
+                                            function assignCardTo(index, type) {
+                                                const card = detectedCards[index];
+                                                
+                                                if (type === 'hole') {
+                                                    if (liveHoleCards.length >= 2) {
+                                                        updateLiveStatus('idle', 'Zaten 2 hole card var');
+                                                        closeCardMenu();
+                                                        return;
+                                                    }
+                                                    liveHoleCards.push(card);
+                                                } else {
+                                                    if (liveCommunityCards.length >= 5) {
+                                                        updateLiveStatus('idle', 'Zaten 5 community card var');
+                                                        closeCardMenu();
+                                                        return;
+                                                    }
+                                                    liveCommunityCards.push(card);
+                                                }
+                                                
+                                                // Kartı listeden çıkar
+                                                detectedCards.splice(index, 1);
+                                                
+                                                // Render
+                                                renderCardSlots();
+                                                runAnalysis();
+                                                
+                                                closeCardMenu();
+                                                
+                                                // Eğer tüm kartlar atandıysa bekleme alanını gizle
+                                                if (detectedCards.length === 0) {
+                                                    clearDetectedCards();
+                                                    updateLiveStatus('success', 'Tüm kartlar atandı');
+                                                } else {
+                                                    renderDetectedCards();
+                                                    updateLiveStatus('success', `${detectedCards.length} kart kaldı`);
+                                                }
+                                            }
+                                            
+                                            // Bekleme alanını temizle
+                                            function clearDetectedCards() {
+                                                detectedCards = [];
+                                                document.getElementById('detectedCardsArea').style.display = 'none';
+                                                document.getElementById('detectedCardsList').innerHTML = '';
+                                                closeCardMenu();
+                                            }
+                                            
+                                            // Otomatik atama (eski davranış)
+                                            function autoAssignDetected() {
+                                                let assigned = 0;
+                                                
+                                                for (const card of [...detectedCards]) {
+                                                    if (liveHoleCards.length < 2) {
+                                                        liveHoleCards.push(card);
+                                                        assigned++;
+                                                    } else if (liveCommunityCards.length < 5) {
+                                                        liveCommunityCards.push(card);
+                                                        assigned++;
+                                                    }
+                                                }
+                                                
+                                                clearDetectedCards();
+                                                renderCardSlots();
+                                                runAnalysis();
+                                                updateLiveStatus('success', `${assigned} kart otomatik atandı`);
+                                            }
+                                            
+                                            function autoAssignCards(cards) {
+                                                let newCardsAdded = 0;
+                                                let duplicatesSkipped = 0;
+
+                                                for (const card of cards) {
+                                                    // Aynı kartı tekrar eklemeyi önle
+                                                    if (isDuplicate(card)) {
+                                                        duplicatesSkipped++;
+                                                        continue;
+                                                    }
+
+                                                    // Yeni kartı uygun yere ekle
+                                                    if (liveHoleCards.length < 2) {
+                                                        liveHoleCards.push(card);
+                                                        newCardsAdded++;
+                                                    } else if (liveCommunityCards.length < 5) {
+                                                        liveCommunityCards.push(card);
+                                                        newCardsAdded++;
+                                                    }
+                                                }
+
+                                                // Kullanıcıya geri bildirim
+                                                if (newCardsAdded > 0) {
+                                                    renderCardSlots();
+                                                    runAnalysis();
+
+                                                    let statusMsg = `${newCardsAdded} yeni kart eklendi`;
+                                                    if (duplicatesSkipped > 0) {
+                                                        statusMsg += `, ${duplicatesSkipped} kart zaten vardı`;
+                                                    }
+                                                    updateLiveStatus('success', statusMsg);
+                                                } else if (duplicatesSkipped > 0) {
+                                                    updateLiveStatus('idle', 'Tüm kartlar zaten eklenmiş');
+                                                } else {
+                                                    updateLiveStatus('idle', 'Kart eklenmedi');
+                                                }
+                                            }
+
+                                            function addManualCard(type) {
+                                                const suit = document.getElementById('manualSuit').value;
+                                                const rank = document.getElementById('manualRank').value;
+                                                const card = { suit, rank };
+
+                                                // Aynı kart zaten eklenmişse uyar
+                                                if (isDuplicate(card)) {
+                                                    const suitSym = suitSymbols[card.suit];
+                                                    updateLiveStatus('idle', `${suitSym}${card.rank} kartı zaten eklenmiş!`);
+                                                    return;
+                                                }
+
+                                                if (type === 'hole') {
+                                                    if (liveHoleCards.length >= 2) {
+                                                        updateLiveStatus('idle', 'Zaten 2 hole card var. Önce kartı kaldırın.');
+                                                        return;
+                                                    }
+                                                    liveHoleCards.push(card);
+                                                    updateLiveStatus('success', `${suitSymbols[card.suit]}${card.rank} hole card olarak eklendi`);
+                                                } else {
+                                                    if (liveCommunityCards.length >= 5) {
+                                                        updateLiveStatus('idle', 'Zaten 5 community card var.');
+                                                        return;
+                                                    }
+                                                    liveCommunityCards.push(card);
+                                                    updateLiveStatus('success', `${suitSymbols[card.suit]}${card.rank} community card olarak eklendi`);
+                                                }
+
+                                                renderCardSlots();
+                                                runAnalysis();
+                                            }
+
+                                            function isDuplicate(card) {
+                                                return [...liveHoleCards, ...liveCommunityCards, ...detectedCards].some(c => c.suit === card.suit && c.rank === card.rank);
+                                            }
+
+                                            function removeCard(type, index) {
+                                                let removedCard;
+                                                if (type === 'hole') {
+                                                    removedCard = liveHoleCards[index];
+                                                    liveHoleCards.splice(index, 1);
+                                                } else {
+                                                    removedCard = liveCommunityCards[index];
+                                                    liveCommunityCards.splice(index, 1);
+                                                }
+
+                                                renderCardSlots();
+                                                runAnalysis();
+
+                                                if (removedCard) {
+                                                    updateLiveStatus('success', `${suitSymbols[removedCard.suit]}${removedCard.rank} kaldırıldı`);
+                                                }
+                                            }
+
+                                            function clearAllCards() {
+                                                const totalCards = liveHoleCards.length + liveCommunityCards.length + detectedCards.length;
+                                                liveHoleCards = [];
+                                                liveCommunityCards = [];
+                                                clearDetectedCards(); // Bekleme alanını da temizle
+                                                renderCardSlots();
+                                                document.getElementById('strategyContent').innerHTML = `
+                                                    <div class="strategy-empty">
+                                                        <span style="font-size:2rem">🃏</span>
+                                                        <p>En az 2 hole card ekleyin — strateji otomatik hesaplanacak</p>
+                                                    </div>`;
+                                                document.getElementById('livePhase').textContent = 'Pre-Flop';
+                                                document.getElementById('liveHandBadge').style.display = 'none';
+
+                                                if (totalCards > 0) {
+                                                    updateLiveStatus('success', `${totalCards} kart temizlendi`);
+                                                }
+                                            }
+
+                                            function renderCardSlots() {
+                                                const holeSlots = document.getElementById('holeCardSlots');
+                                                const commSlots = document.getElementById('communityCardSlots');
+
+                                                // Hole cards
+                                                let holeHtml = '';
+                                                for (let i = 0; i < 2; i++) {
+                                                    if (i < liveHoleCards.length) {
+                                                        const c = liveHoleCards[i];
+                                                        holeHtml += `<div class="card-slot filled ${suitClasses[c.suit]}" onclick="removeCard('hole', ${i})" title="Kaldırmak için tıkla">
+                                                            <span class="slot-rank">${c.rank}</span>
+                                                            <span class="slot-suit">${suitSymbols[c.suit]}</span>
+                                                        </div>`;
+                                                    } else {
+                                                        holeHtml += `<div class="card-slot empty"><span class="slot-placeholder">${i + 1}</span></div>`;
+                                                    }
+                                                }
+                                                holeSlots.innerHTML = holeHtml;
+
+                                                // Community cards
+                                                const labels = ['F1', 'F2', 'F3', 'T', 'R'];
+                                                let commHtml = '';
+                                                for (let i = 0; i < 5; i++) {
+                                                    if (i < liveCommunityCards.length) {
+                                                        const c = liveCommunityCards[i];
+                                                        commHtml += `<div class="card-slot filled ${suitClasses[c.suit]}" onclick="removeCard('community', ${i})" title="Kaldırmak için tıkla">
+                                                            <span class="slot-rank">${c.rank}</span>
+                                                            <span class="slot-suit">${suitSymbols[c.suit]}</span>
+                                                        </div>`;
+                                                    } else {
+                                                        commHtml += `<div class="card-slot empty"><span class="slot-placeholder">${labels[i]}</span></div>`;
+                                                    }
+                                                }
+                                                commSlots.innerHTML = commHtml;
+                                            }
+
+                                            // =============================================
+                                            // Strategy Analysis
+                                            // =============================================
+                                            async function runAnalysis() {
+                                                if (liveHoleCards.length < 2) return;
+
+                                                const body = {
+                                                    holeCards: liveHoleCards,
+                                                    communityCards: liveCommunityCards,
+                                                    potSize: parseInt(document.getElementById('settingPot').value) || 0,
+                                                    currentBet: parseInt(document.getElementById('settingBet').value) || 0,
+                                                    stackSize: parseInt(document.getElementById('settingStack').value) || 1000,
+                                                    opponentCount: parseInt(document.getElementById('settingOpponents').value) || 3
+                                                };
+
+                                                try {
+                                                    const response = await fetch('@Url.Action("AnalyzeCards", "Poker")', {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify(body)
+                                                    });
+
+                                                    const data = await response.json();
+                                                    if (data.success && !data.needMoreCards) {
+                                                        renderStrategy(data);
+                                                        lastAiContext = data.aiContext || '';
+                                                    }
+                                                } catch (err) {
+                                                    console.error('Analysis error:', err);
+                                                }
+                                            }
+
+                                            function renderStrategy(data) {
+                                                const s = data.strategy;
+                                                const phase = data.phase;
+
+                                                document.getElementById('livePhase').textContent = phase;
+                                                if (data.handResult) {
+                                                    document.getElementById('liveHandBadge').style.display = '';
+                                                    document.getElementById('liveHandResult').textContent = data.handResult.rankDisplayName;
+                                                } else {
+                                                    document.getElementById('liveHandBadge').style.display = 'none';
+                                                }
+
+                                                let html = `
+                                                <div class="strategy-grid">
+                                                    <div class="strategy-item">
+                                                        <span class="strategy-label">Chen Skoru</span>
+                                                        <span class="strategy-value">${Math.round(s.chenScore)}/20</span>
+                                                    </div>
+                                                    <div class="strategy-item">
+                                                        <span class="strategy-label">El Gücü</span>
+                                                        <div class="strength-bar">
+                                                            <div class="strength-fill" style="width:${Math.min(s.handStrengthPercent, 100)}%"></div>
+                                                        </div>
+                                                        <span class="strategy-value">%${Math.round(s.handStrengthPercent)}</span>
+                                                    </div>`;
+
+                                                if (s.potOdds > 0) {
+                                                    html += `<div class="strategy-item">
+                                                        <span class="strategy-label">Pot Odds</span>
+                                                        <span class="strategy-value">%${s.potOdds.toFixed(1)}</span>
+                                                    </div>`;
+                                                }
+                                                if (s.outs > 0) {
+                                                    html += `<div class="strategy-item">
+                                                        <span class="strategy-label">Outs</span>
+                                                        <span class="strategy-value">${s.outs} kart (${s.drawProbability.toFixed(1)}%)</span>
+                                                    </div>`;
+                                                }
+
+                                                html += `<div class="strategy-item">
+                                                        <span class="strategy-label">Agresyon</span>
+                                                        <span class="strategy-value">${s.aggressionLevel}</span>
+                                                    </div>
+                                                </div>
+
+                                                <div class="strategy-recommendation">
+                                                    <div class="recommendation-label">📋 Öneri</div>
+                                                    <div class="recommendation-text">${s.recommendedAction}</div>
+                                                </div>
+
+                                                <div class="strategy-reasoning">${s.reasoning}</div>`;
+
+                                                if (s.tips && s.tips.length > 0) {
+                                                    html += '<div class="strategy-tips">';
+                                                    s.tips.forEach(t => { html += `<div class="tip-item">${t}</div>`; });
+                                                    html += '</div>';
+                                                }
+
+                                                if (data.handResult) {
+                                                    html += `<div class="hand-result-display" style="margin-top:0.8rem;text-align:center">
+                                                        ${data.handResult.rankDisplayName} — ${data.handResult.description}
+                                                    </div>`;
+                                                }
+
+                                                document.getElementById('strategyContent').innerHTML = html;
+                                            }
+
+                                            // =============================================
+                                            // AI Chat
+                                            // =============================================
+                                            const liveMessagesDiv = document.getElementById('liveAiMessages');
+                                            const liveAiInput = document.getElementById('liveAiInput');
+
+                                            function addLiveAIMsg(text, role) {
+                                                const msg = document.createElement('div');
+                                                msg.className = `ai-msg ${role}`;
+                                                msg.innerHTML = text;
+                                                liveMessagesDiv.appendChild(msg);
+                                                liveMessagesDiv.scrollTop = liveMessagesDiv.scrollHeight;
+                                            }
+
+                                            function showLiveTyping() {
+                                                const t = document.createElement('div');
+                                                t.className = 'ai-msg assistant';
+                                                t.id = 'liveTyping';
+                                                t.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
+                                                liveMessagesDiv.appendChild(t);
+                                                liveMessagesDiv.scrollTop = liveMessagesDiv.scrollHeight;
+                                            }
+
+                                            function removeLiveTyping() {
+                                                const el = document.getElementById('liveTyping');
+                                                if (el) el.remove();
+                                            }
+
+                                            function getLiveGameState() {
+                                                return {
+                                                    holeCards: liveHoleCards.map(c => `${suitSymbols[c.suit]}${c.rank}`).join(', '),
+                                                    communityCards: liveCommunityCards.map(c => `${suitSymbols[c.suit]}${c.rank}`).join(', '),
+                                                    pot: document.getElementById('settingPot').value,
+                                                    currentBet: document.getElementById('settingBet').value,
+                                                    stack: document.getElementById('settingStack').value,
+                                                    opponents: document.getElementById('settingOpponents').value,
+                                                    aiContext: lastAiContext
+                                                };
+                                            }
+
+                                            async function sendLiveAIMessage() {
+                                                const text = liveAiInput.value.trim();
+                                                if (!text) return;
+
+                                                addLiveAIMsg(text, 'user');
+                                                liveAiInput.value = '';
+                                                document.getElementById('btnLiveAiSend').disabled = true;
+                                                showLiveTyping();
+
+                                                try {
+                                                    const response = await fetch('@Url.Action("PokerChat", "AI")', {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify({ message: text, gameState: getLiveGameState() })
+                                                    });
+
+                                                    removeLiveTyping();
+                                                    const data = await response.json();
+                                                    if (data.success) {
+                                                        addLiveAIMsg(data.response, 'assistant');
+                                                    } else {
+                                                        addLiveAIMsg('❌ ' + (data.error || 'Hata oluştu'), 'system');
+                                                    }
+                                                } catch (err) {
+                                                    removeLiveTyping();
+                                                    addLiveAIMsg('❌ Bağlantı hatası.', 'system');
+                                                }
+
+                                                document.getElementById('btnLiveAiSend').disabled = false;
+                                                liveAiInput.focus();
+                                            }
+
+                                            async function askLiveAI(type) {
+                                                const prompts = {
+                                                    'strategy': 'Mevcut elimle ne yapmalıyım? Board analizi ve strateji öner.',
+                                                    'hand': 'Elimdeki kartları değerlendir. El gücü ve potansiyel draw analizi yap.',
+                                                    'odds': 'Pot odds ve outs analizi yap. Çağırmam matematiksel olarak mantıklı mı?',
+                                                    'bluff': 'Bu pozisyonda blöf yapmak mantıklı mı? Ne zaman blöf atılmalı?'
+                                                };
+                                                liveAiInput.value = prompts[type] || '';
+                                                await sendLiveAIMessage();
+                                            }
+                    </script>
+                }

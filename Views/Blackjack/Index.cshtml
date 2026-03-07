@@ -1,0 +1,47 @@
+﻿@{
+    ViewData["Title"] = "Blackjack Setup";
+}
+
+<div class="setup-container">
+    <div class="setup-logo">♠ Blackjack AI</div>
+    <p class="setup-subtitle">Yapay zeka destekli kart sayma ve strateji analiz aracı</p>
+
+    <div class="setup-card">
+        <div class="warning-box">
+            <span class="warn-icon">⚠️</span>
+            <span>Kumar bağımlılık yapabilir ve para kaybetme riski taşır. Bu proje yalnızca eğitim ve geliştirme amaçlı
+                oluşturulmuştur.</span>
+            </div>
+
+            <form id="createDeckForm">
+                <div class="deck-input-group">
+                    <label for="numberOfDecks">Deste Sayısı:</label>
+                    <input type="number" id="numberOfDecks" name="numberOfDecks"       class="deck-input" min="1" max="8"
+                           value="6" required />
+                </div>
+                <button type="submit" class="btn-start">🚀 Oyunu Başlat</button>
+            </form>
+        </div>
+    </div>
+
+    @section Scripts {
+        <script>
+            document.getElementById('createDeckForm').addEventListener('submit', function (e) {
+                e.preventDefault();
+                const numberOfDecks = document.getElementById('numberOfDecks').value;
+
+                fetch('@Url.Action("CreateDeck", "Blackjack")', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'numberOfDecks=' + encodeURIComponent(numberOfDecks),
+                    redirect: 'follow'
+                }).then(response => {
+                    if (response.redirected) {
+                        window.location.href = response.url;
+                    } else {
+                        window.location.href = '@Url.Action("ManageDeck", "Blackjack")';
+                    }
+                });
+            });
+        </script>
+    }
