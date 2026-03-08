@@ -1,5 +1,5 @@
-using Microsoft.AspNetCore.Mvc;
 using Blackjack.Models.Poker;
+using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
 
 namespace Blackjack.Controllers
@@ -7,11 +7,33 @@ namespace Blackjack.Controllers
     public class PokerController : Controller
     {
         private const string PokerSessionKey = "PokerGame";
+        private const int MaxNumericInput = 10_000_000;
+        private static readonly HashSet<PlayerAction> AllowedActions = new()
+        {
+            PlayerAction.Fold,
+            PlayerAction.Check,
+            PlayerAction.Call,
+            PlayerAction.Raise,
+            PlayerAction.AllIn
+        };
+        private static readonly HashSet<string> ValidSuits = new() { "Kupa", "Karo", "Sinek", "Maça" };
+        private static readonly HashSet<string> ValidRanks = new() { "2", "3", "4", "5", "6", "7", "8", "9", "10", "Vale", "Kız", "Papaz", "As" };
+
+        private readonly ILogger<PokerController> _logger;
+
+        public PokerController(ILogger<PokerController> logger)
+        {
+            _logger = logger;
+        }
 
         private PokerGame? GetGame()
         {
             var json = HttpContext.Session.GetString(PokerSessionKey);
-            if (string.IsNullOrEmpty(json)) return null;
+            if (string.IsNullOrEmpty(json))
+            {
+                return null;
+            }
+
             return JsonSerializer.Deserialize<PokerGame>(json);
         }
 
@@ -21,17 +43,11 @@ namespace Blackjack.Controllers
             HttpContext.Session.SetString(PokerSessionKey, json);
         }
 
-        // ====================================
-        // Lobby
-        // ====================================
         public IActionResult Index()
         {
             return View();
         }
 
-        // ====================================
-        // New Game
-        // ====================================
         [HttpPost]
         public IActionResult NewGame(int botCount = 3, int startingChips = 1000, int blindLevel = 1)
         {
@@ -39,18 +55,19 @@ namespace Blackjack.Controllers
             if (botCount > 5) botCount = 5;
             if (startingChips < 100) startingChips = 100;
 
-            var game = new PokerGame();
-
-            game.SmallBlindAmount = blindLevel switch
+            var game = new PokerGame
             {
-                1 => 5,
-                2 => 10,
-                3 => 25,
-                4 => 50,
-                _ => 10
+                SmallBlindAmount = blindLevel switch
+                {
+                    1 => 5,
+                    2 => 10,
+                    3 => 25,
+                    4 => 50,
+                    _ => 10
+                }
             };
-            game.BigBlindAmount = game.SmallBlindAmount * 2;
 
+            game.BigBlindAmount = game.SmallBlindAmount * 2;
             game.SetupGame(botCount, startingChips);
             game.StartNewHand();
             SaveGame(game);
@@ -58,15 +75,14 @@ namespace Blackjack.Controllers
             return RedirectToAction("Table");
         }
 
-        // ====================================
-        // Table (Main View)
-        // ====================================
         public IActionResult Table()
         {
             var game = GetGame();
-            if (game == null) return RedirectToAction("Index");
+            if (game == null)
+            {
+                return RedirectToAction("Index");
+            }
 
-            // Calculate strategy for human player
             var human = game.HumanPlayer;
             if (human.HoleCards.Count >= 2)
             {
@@ -86,36 +102,65 @@ namespace Blackjack.Controllers
             return View(game);
         }
 
-        // ====================================
-        // Player Action (AJAX)
-        // ====================================
         [HttpPost]
-        public IActionResult Action([FromBody] PokerActionRequest request)
+        public IActionResult Action([FromBody] PokerActionRequest? request)
         {
+            if (request == null)
+            {
+                return BadRequest(new { success = false, error = "Geçersiz istek gövdesi." });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.Action))
+            {
+                return BadRequest(new { success = false, error = "Aksiyon boş olamaz." });
+            }
+
+            if (request.Action.Length > 20)
+            {
+                return BadRequest(new { success = false, error = "Aksiyon geçersiz." });
+            }
+
+            if (request.Amount < 0 || request.Amount > MaxNumericInput)
+            {
+                return BadRequest(new { success = false, error = "Bahis miktarı geçersiz." });
+            }
+
+            if (!Enum.TryParse<PlayerAction>(request.Action.Trim(), true, out var action) || !AllowedActions.Contains(action))
+            {
+                return BadRequest(new { success = false, error = "Geçersiz aksiyon." });
+            }
+
             var game = GetGame();
             if (game == null)
-                return Json(new { success = false, error = "Oyun bulunamadı." });
+            {
+                return NotFound(new { success = false, error = "Oyun bulunamadı." });
+            }
 
             if (!game.IsHumanTurn)
-                return Json(new { success = false, error = "Sıra sizde değil." });
-
-            var action = Enum.Parse<PlayerAction>(request.Action, true);
-            var success = game.PerformAction(action, request.Amount);
-
-            if (success)
             {
-                // Run any pending bot actions (e.g., after phase transitions)
+                return BadRequest(new { success = false, error = "Sıra sizde değil." });
+            }
+
+            try
+            {
+                var success = game.PerformAction(action, request.Amount);
+                if (!success)
+                {
+                    return BadRequest(new { success = false, error = "Geçersiz aksiyon." });
+                }
+
                 game.RunPendingBotActions();
                 SaveGame(game);
                 return Json(new { success = true, redirect = Url.Action("Table") });
             }
-
-            return Json(new { success = false, error = "Geçersiz aksiyon." });
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Poker action request failed.");
+                return StatusCode(StatusCodes.Status500InternalServerError,
+                    new { success = false, error = "Aksiyon işlenirken beklenmeyen bir hata oluştu." });
+            }
         }
 
-        // ====================================
-        // Next Hand
-        // ====================================
         [HttpPost]
         public IActionResult NextHand()
         {
@@ -133,15 +178,14 @@ namespace Blackjack.Controllers
             return RedirectToAction("Table");
         }
 
-        // ====================================
-        // Get State (AJAX)
-        // ====================================
         [HttpGet]
         public IActionResult GetState()
         {
             var game = GetGame();
             if (game == null)
+            {
                 return Json(new { success = false });
+            }
 
             var human = game.HumanPlayer;
             StrategyResult? strategy = null;
@@ -173,9 +217,15 @@ namespace Blackjack.Controllers
                 communityCards = game.CommunityCards.Select(c => new { c.Suit, c.Rank, c.SuitSymbol, c.DisplayName }),
                 players = game.Players.Select(p => new
                 {
-                    p.Id, p.Name, p.Chips, p.IsBot,
-                    p.HasFolded, p.IsAllIn, p.IsDealer,
-                    p.CurrentBet, p.PositionDisplay,
+                    p.Id,
+                    p.Name,
+                    p.Chips,
+                    p.IsBot,
+                    p.HasFolded,
+                    p.IsAllIn,
+                    p.IsDealer,
+                    p.CurrentBet,
+                    p.PositionDisplay,
                     lastAction = p.LastAction.ToString(),
                     holeCards = p.IsBot && game.Phase != GamePhase.Showdown && game.Phase != GamePhase.Finished
                         ? null
@@ -200,9 +250,6 @@ namespace Blackjack.Controllers
             });
         }
 
-        // ====================================
-        // Reset Game
-        // ====================================
         [HttpPost]
         public IActionResult Reset()
         {
@@ -210,25 +257,53 @@ namespace Blackjack.Controllers
             return RedirectToAction("Index");
         }
 
-        // ====================================
-        // Live Mode (Card Detection + Strategy)
-        // ====================================
         public IActionResult Live()
         {
             return View();
         }
 
         [HttpPost]
-        public IActionResult AnalyzeCards([FromBody] LiveAnalyzeRequest request)
+        public IActionResult AnalyzeCards([FromBody] LiveAnalyzeRequest? request)
         {
+            if (request == null)
+            {
+                return BadRequest(new { success = false, error = "Geçersiz istek gövdesi." });
+            }
+
+            if (request.PotSize < 0 || request.PotSize > MaxNumericInput ||
+                request.CurrentBet < 0 || request.CurrentBet > MaxNumericInput ||
+                request.StackSize < 0 || request.StackSize > MaxNumericInput)
+            {
+                return BadRequest(new { success = false, error = "Sayısal değerler geçersiz." });
+            }
+
+            if (request.OpponentCount is < 1 or > 9)
+            {
+                return BadRequest(new { success = false, error = "Rakip sayısı 1 ile 9 arasında olmalıdır." });
+            }
+
+            if ((request.HoleCards?.Count ?? 0) > 2)
+            {
+                return BadRequest(new { success = false, error = "Hole card sayısı en fazla 2 olabilir." });
+            }
+
+            if ((request.CommunityCards?.Count ?? 0) > 5)
+            {
+                return BadRequest(new { success = false, error = "Community card sayısı en fazla 5 olabilir." });
+            }
+
+            if (!AreCardsValid(request.HoleCards) || !AreCardsValid(request.CommunityCards))
+            {
+                return BadRequest(new { success = false, error = "Kart bilgileri geçersiz." });
+            }
+
             try
             {
-                var holeCards = request.HoleCards?.Select(c => new PokerCard { Suit = c.Suit, Rank = c.Rank }).ToList()
+                var holeCards = request.HoleCards?.Select(c => new PokerCard { Suit = c.Suit.Trim(), Rank = c.Rank.Trim() }).ToList()
                     ?? new List<PokerCard>();
-                var communityCards = request.CommunityCards?.Select(c => new PokerCard { Suit = c.Suit, Rank = c.Rank }).ToList()
+                var communityCards = request.CommunityCards?.Select(c => new PokerCard { Suit = c.Suit.Trim(), Rank = c.Rank.Trim() }).ToList()
                     ?? new List<PokerCard>();
 
-                // Determine phase from community cards count
                 var phase = communityCards.Count switch
                 {
                     0 => GamePhase.PreFlop,
@@ -254,12 +329,11 @@ namespace Blackjack.Controllers
                     phase,
                     request.PotSize,
                     request.CurrentBet,
-                    0, // player's current bet (live mode, user hasn't bet yet)
+                    0,
                     request.StackSize,
                     request.OpponentCount
                 );
 
-                // Also evaluate the hand if community cards exist
                 HandResult? handResult = null;
                 if (communityCards.Count >= 3)
                 {
@@ -293,8 +367,32 @@ namespace Blackjack.Controllers
             }
             catch (Exception ex)
             {
-                return Json(new { success = false, error = ex.Message });
+                _logger.LogError(ex, "Poker live analysis request failed.");
+                return StatusCode(StatusCodes.Status500InternalServerError,
+                    new { success = false, error = "Analiz sırasında beklenmeyen bir hata oluştu." });
             }
+        }
+
+        private static bool AreCardsValid(IEnumerable<CardInput>? cards)
+        {
+            if (cards == null)
+            {
+                return true;
+            }
+
+            foreach (var card in cards)
+            {
+                if (card == null ||
+                    string.IsNullOrWhiteSpace(card.Suit) ||
+                    string.IsNullOrWhiteSpace(card.Rank) ||
+                    !ValidSuits.Contains(card.Suit.Trim()) ||
+                    !ValidRanks.Contains(card.Rank.Trim()))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 

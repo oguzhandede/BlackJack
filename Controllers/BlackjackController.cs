@@ -7,6 +7,14 @@ namespace Blackjack.Controllers
     public class BlackjackController : Controller
     {
         private const string GameSessionKey = "BlackjackGame";
+        private static readonly HashSet<string> ValidSuits = new() { "Kupa", "Karo", "Sinek", "Maça" };
+        private static readonly HashSet<string> ValidRanks = new() { "2", "3", "4", "5", "6", "7", "8", "9", "10", "Vale", "Kız", "Papaz", "As" };
+        private readonly ILogger<BlackjackController> _logger;
+
+        public BlackjackController(ILogger<BlackjackController> logger)
+        {
+            _logger = logger;
+        }
 
         private BlackjackGame? GetGame()
         {
@@ -80,35 +88,73 @@ namespace Blackjack.Controllers
         }
 
         [HttpPost]
-        public IActionResult RemoveCards([FromBody] RemoveCardsRequest request)
+        public IActionResult RemoveCards([FromBody] RemoveCardsRequest? request)
         {
-            var game = GetGame();
-            if (game == null)
-                return Json(new { success = false, error = "Oyun bulunamadı." });
-
-            int removed = 0;
-            var removedList = new List<object>();
-
-            foreach (var card in request.Cards)
+            if (request == null)
             {
-                if (game.Deck.CardExists(card.Suit, card.Rank))
-                {
-                    game.RemoveCard(card.Suit, card.Rank);
-                    removed++;
-                    removedList.Add(new { card.Suit, card.Rank });
-                }
+                return BadRequest(new { success = false, error = "Geçersiz istek gövdesi." });
             }
 
-            SaveGame(game);
-
-            return Json(new
+            if (request.Cards == null || request.Cards.Count == 0)
             {
-                success = true,
-                removed,
-                removedCards = removedList,
-                remainingCount = game.Deck.Cards.Count,
-                totalRemoved = game.RemovedCards.Count
-            });
+                return BadRequest(new { success = false, error = "En az bir kart göndermelisiniz." });
+            }
+
+            if (request.Cards.Count > 52)
+            {
+                return BadRequest(new { success = false, error = "Tek istekte en fazla 52 kart gönderilebilir." });
+            }
+
+            if (request.Cards.Any(c =>
+                    c == null ||
+                    string.IsNullOrWhiteSpace(c.Suit) ||
+                    string.IsNullOrWhiteSpace(c.Rank) ||
+                    !ValidSuits.Contains(c.Suit.Trim()) ||
+                    !ValidRanks.Contains(c.Rank.Trim())))
+            {
+                return BadRequest(new { success = false, error = "Kart bilgileri geçersiz." });
+            }
+
+            var game = GetGame();
+            if (game == null)
+            {
+                return NotFound(new { success = false, error = "Oyun bulunamadı." });
+            }
+
+            try
+            {
+                int removed = 0;
+                var removedList = new List<object>();
+
+                foreach (var card in request.Cards)
+                {
+                    var suit = card.Suit.Trim();
+                    var rank = card.Rank.Trim();
+                    if (game.Deck.CardExists(suit, rank))
+                    {
+                        game.RemoveCard(suit, rank);
+                        removed++;
+                        removedList.Add(new { Suit = suit, Rank = rank });
+                    }
+                }
+
+                SaveGame(game);
+
+                return Json(new
+                {
+                    success = true,
+                    removed,
+                    removedCards = removedList,
+                    remainingCount = game.Deck.Cards.Count,
+                    totalRemoved = game.RemovedCards.Count
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to remove cards from blackjack game.");
+                return StatusCode(StatusCodes.Status500InternalServerError,
+                    new { success = false, error = "Kart çıkarma sırasında beklenmeyen bir hata oluştu." });
+            }
         }
     }
 

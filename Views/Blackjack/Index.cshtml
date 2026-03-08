@@ -26,13 +26,19 @@
 
     @section Scripts {
         <script>
+            const requestVerificationToken =
+                document.querySelector('meta[name="request-verification-token"]')?.getAttribute('content') ?? '';
+
             document.getElementById('createDeckForm').addEventListener('submit', function (e) {
                 e.preventDefault();
                 const numberOfDecks = document.getElementById('numberOfDecks').value;
 
                 fetch('@Url.Action("CreateDeck", "Blackjack")', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        RequestVerificationToken: requestVerificationToken
+                    },
                     body: 'numberOfDecks=' + encodeURIComponent(numberOfDecks),
                     redirect: 'follow'
                 }).then(response => {

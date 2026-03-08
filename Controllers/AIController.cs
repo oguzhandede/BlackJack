@@ -1,52 +1,77 @@
-using Microsoft.AspNetCore.Mvc;
 using Blackjack.Services;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Blackjack.Controllers
 {
     [Route("[controller]")]
     public class AIController : Controller
     {
-        private readonly OpenRouterService _openRouterService;
+        private const int MaxMessageLength = 2000;
+        private const int MaxImagePayloadLength = 12_000_000;
 
-        public AIController(OpenRouterService openRouterService)
+        private readonly OpenRouterService _openRouterService;
+        private readonly ILogger<AIController> _logger;
+
+        public AIController(OpenRouterService openRouterService, ILogger<AIController> logger)
         {
             _openRouterService = openRouterService;
+            _logger = logger;
         }
 
         [HttpPost("Chat")]
-        public async Task<IActionResult> Chat([FromBody] AIChatRequest request)
+        public async Task<IActionResult> Chat([FromBody] AIChatRequest? request)
         {
-            if (string.IsNullOrWhiteSpace(request.Message))
+            if (request == null)
             {
-                return Json(new { success = false, error = "Mesaj boş olamaz." });
+                return BadRequest(new { success = false, error = "Geçersiz istek gövdesi." });
+            }
+
+            var message = request.Message?.Trim();
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return BadRequest(new { success = false, error = "Mesaj boş olamaz." });
+            }
+
+            if (message.Length > MaxMessageLength)
+            {
+                return BadRequest(new { success = false, error = $"Mesaj en fazla {MaxMessageLength} karakter olabilir." });
             }
 
             try
             {
-                var response = await _openRouterService.GetChatResponseAsync(
-                    request.Message,
-                    request.GameState
-                );
-
+                var response = await _openRouterService.GetChatResponseAsync(message, request.GameState);
                 return Json(new { success = true, response });
             }
             catch (Exception ex)
             {
-                return Json(new { success = false, error = "Bir hata oluştu: " + ex.Message });
+                _logger.LogError(ex, "AI chat request failed.");
+                return StatusCode(StatusCodes.Status500InternalServerError,
+                    new { success = false, error = "İşlem sırasında beklenmeyen bir hata oluştu." });
             }
         }
 
         [HttpPost("DetectCards")]
-        public async Task<IActionResult> DetectCards([FromBody] CardDetectionRequest request)
+        public async Task<IActionResult> DetectCards([FromBody] CardDetectionRequest? request)
         {
-            if (string.IsNullOrWhiteSpace(request.Image))
+            if (request == null)
             {
-                return Json(new { success = false, error = "Görüntü verisi boş." });
+                return BadRequest(new { success = false, error = "Geçersiz istek gövdesi." });
+            }
+
+            var image = request.Image?.Trim();
+            if (string.IsNullOrWhiteSpace(image))
+            {
+                return BadRequest(new { success = false, error = "Görüntü verisi boş." });
+            }
+
+            if (image.Length > MaxImagePayloadLength)
+            {
+                return BadRequest(new { success = false, error = "Görüntü verisi çok büyük." });
             }
 
             try
             {
-                var result = await _openRouterService.DetectCardsFromImageAsync(request.Image);
+                var result = await _openRouterService.DetectCardsFromImageAsync(image);
                 return Json(new
                 {
                     success = result.Success,
@@ -57,30 +82,41 @@ namespace Blackjack.Controllers
             }
             catch (Exception ex)
             {
-                return Json(new { success = false, error = "Kart algılama hatası: " + ex.Message });
+                _logger.LogError(ex, "AI card detection request failed.");
+                return StatusCode(StatusCodes.Status500InternalServerError,
+                    new { success = false, error = "Kart algılama sırasında beklenmeyen bir hata oluştu." });
             }
         }
 
         [HttpPost("PokerChat")]
-        public async Task<IActionResult> PokerChat([FromBody] AIChatRequest request)
+        public async Task<IActionResult> PokerChat([FromBody] AIChatRequest? request)
         {
-            if (string.IsNullOrWhiteSpace(request.Message))
+            if (request == null)
             {
-                return Json(new { success = false, error = "Mesaj boş olamaz." });
+                return BadRequest(new { success = false, error = "Geçersiz istek gövdesi." });
+            }
+
+            var message = request.Message?.Trim();
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return BadRequest(new { success = false, error = "Mesaj boş olamaz." });
+            }
+
+            if (message.Length > MaxMessageLength)
+            {
+                return BadRequest(new { success = false, error = $"Mesaj en fazla {MaxMessageLength} karakter olabilir." });
             }
 
             try
             {
-                var response = await _openRouterService.GetPokerChatResponseAsync(
-                    request.Message,
-                    request.GameState
-                );
-
+                var response = await _openRouterService.GetPokerChatResponseAsync(message, request.GameState);
                 return Json(new { success = true, response });
             }
             catch (Exception ex)
             {
-                return Json(new { success = false, error = "Bir hata oluştu: " + ex.Message });
+                _logger.LogError(ex, "AI poker chat request failed.");
+                return StatusCode(StatusCodes.Status500InternalServerError,
+                    new { success = false, error = "İşlem sırasında beklenmeyen bir hata oluştu." });
             }
         }
     }

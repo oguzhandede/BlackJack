@@ -244,6 +244,18 @@
                                             // =============================================
                                             // State
                                             // =============================================
+                                            const requestVerificationToken =
+                                                document.querySelector('meta[name="request-verification-token"]')?.getAttribute('content') ?? '';
+
+                                            function createPostHeaders(contentType) {
+                                                const headers = {};
+                                                if (contentType) {
+                                                    headers['Content-Type'] = contentType;
+                                                }
+                                                headers.RequestVerificationToken = requestVerificationToken;
+                                                return headers;
+                                            }
+
                                             let liveHoleCards = [];
                                             let liveCommunityCards = [];
                                             let detectedCards = []; // AI tarafından algılanan kartlar (bekleme alanı)
@@ -343,7 +355,7 @@
                                                 try {
                                                     const response = await fetch('@Url.Action("DetectCards", "AI")', {
                                                         method: 'POST',
-                                                        headers: { 'Content-Type': 'application/json' },
+                                                        headers: createPostHeaders('application/json'),
                                                         body: JSON.stringify({ image: imageData })
                                                     });
 
@@ -404,9 +416,25 @@
                                             // =============================================
                                             
                                             // AI tarafından algılanan kartları bekleme alanında göster
+                                            function normalizeCard(card) {
+                                                if (!card || typeof card.suit !== 'string' || typeof card.rank !== 'string') {
+                                                    return null;
+                                                }
+
+                                                const suit = card.suit.trim();
+                                                const rank = card.rank.trim();
+                                                if (!suit || !rank || suit.length > 10 || rank.length > 10) {
+                                                    return null;
+                                                }
+
+                                                return { suit, rank };
+                                            }
+
                                             function showDetectedCards(cards) {
-                                                // Sadece yeni kartları (duplike olmayanları) ekle
-                                                detectedCards = cards.filter(card => !isDuplicate(card));
+                                                // Sadece geçerli ve yeni kartları ekle
+                                                detectedCards = cards
+                                                    .map(normalizeCard)
+                                                    .filter(card => card !== null && !isDuplicate(card));
                                                 
                                                 if (detectedCards.length === 0) {
                                                     updateLiveStatus('idle', 'Tüm kartlar zaten eklenmiş');
@@ -421,23 +449,33 @@
                                             // Algılanan kartları bekleme alanında render et
                                             function renderDetectedCards() {
                                                 const container = document.getElementById('detectedCardsList');
-                                                container.innerHTML = '';
+                                                container.replaceChildren();
                                                 
                                                 detectedCards.forEach((card, index) => {
                                                     const cardDiv = document.createElement('div');
-                                                    cardDiv.className = `card-slot filled ${suitClasses[card.suit]}`;
+                                                    cardDiv.className = `card-slot filled ${suitClasses[card.suit] || ''}`;
                                                     cardDiv.style.cursor = 'pointer';
                                                     cardDiv.style.position = 'relative';
-                                                    cardDiv.innerHTML = `
-                                                        <span class="slot-rank">${card.rank}</span>
-                                                        <span class="slot-suit">${suitSymbols[card.suit]}</span>
-                                                        <div style="position:absolute; bottom:2px; font-size:0.6rem; width:100%; text-align:center; opacity:0.7;">
-                                                            tıkla
-                                                        </div>
-                                                    `;
-                                                    
-                                                    // Karta tıklanınca seçenek menüsü göster
-                                                    cardDiv.onclick = () => showCardAssignMenu(card, index);
+
+                                                    const rankEl = document.createElement('span');
+                                                    rankEl.className = 'slot-rank';
+                                                    rankEl.textContent = card.rank;
+
+                                                    const suitEl = document.createElement('span');
+                                                    suitEl.className = 'slot-suit';
+                                                    suitEl.textContent = suitSymbols[card.suit] || '?';
+
+                                                    const hint = document.createElement('div');
+                                                    hint.style.position = 'absolute';
+                                                    hint.style.bottom = '2px';
+                                                    hint.style.fontSize = '0.6rem';
+                                                    hint.style.width = '100%';
+                                                    hint.style.textAlign = 'center';
+                                                    hint.style.opacity = '0.7';
+                                                    hint.textContent = 'tıkla';
+
+                                                    cardDiv.append(rankEl, suitEl, hint);
+                                                    cardDiv.addEventListener('click', () => showCardAssignMenu(card, index));
                                                     
                                                     container.appendChild(cardDiv);
                                                 });
@@ -445,42 +483,73 @@
                                             
                                             // Kart atama menüsü göster
                                             function showCardAssignMenu(card, index) {
+                                                closeCardMenu();
+
                                                 const menu = document.createElement('div');
-                                                menu.style.cssText = `
-                                                    position: fixed;
-                                                    top: 50%;
-                                                    left: 50%;
-                                                    transform: translate(-50%, -50%);
-                                                    background: rgba(20, 30, 48, 0.98);
-                                                    padding: 1.5rem;
-                                                    border-radius: 12px;
-                                                    border: 2px solid rgba(255,255,255,0.1);
-                                                    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-                                                    z-index: 9999;
-                                                    min-width: 250px;
-                                                `;
-                                                
-                                                menu.innerHTML = `
-                                                    <div style="text-align:center; margin-bottom:1rem;">
-                                                        <div class="card-slot filled ${suitClasses[card.suit]}" style="display:inline-block; margin-bottom:0.5rem;">
-                                                            <span class="slot-rank">${card.rank}</span>
-                                                            <span class="slot-suit">${suitSymbols[card.suit]}</span>
-                                                        </div>
-                                                        <div style="font-size:0.9rem; opacity:0.8;">Bu kartı nereye eklemek istersiniz?</div>
-                                                    </div>
-                                                    <button class="btn-action call" style="width:100%; margin-bottom:0.5rem;" onclick="assignCardTo(${index}, 'hole')">
-                                                        🃏 Hole Cards (Elin)
-                                                    </button>
-                                                    <button class="btn-action raise" style="width:100%; margin-bottom:0.5rem;" onclick="assignCardTo(${index}, 'community')">
-                                                        🂠 Community Cards (Masa)
-                                                    </button>
-                                                    <button class="btn-action fold" style="width:100%;" onclick="closeCardMenu()">
-                                                        ❌ İptal
-                                                    </button>
-                                                `;
-                                                
-                                                document.body.appendChild(menu);
                                                 menu.id = 'cardAssignMenu';
+                                                menu.style.position = 'fixed';
+                                                menu.style.top = '50%';
+                                                menu.style.left = '50%';
+                                                menu.style.transform = 'translate(-50%, -50%)';
+                                                menu.style.background = 'rgba(20, 30, 48, 0.98)';
+                                                menu.style.padding = '1.5rem';
+                                                menu.style.borderRadius = '12px';
+                                                menu.style.border = '2px solid rgba(255,255,255,0.1)';
+                                                menu.style.boxShadow = '0 10px 40px rgba(0,0,0,0.5)';
+                                                menu.style.zIndex = '9999';
+                                                menu.style.minWidth = '250px';
+
+                                                const previewWrap = document.createElement('div');
+                                                previewWrap.style.textAlign = 'center';
+                                                previewWrap.style.marginBottom = '1rem';
+
+                                                const previewCard = document.createElement('div');
+                                                previewCard.className = `card-slot filled ${suitClasses[card.suit] || ''}`;
+                                                previewCard.style.display = 'inline-block';
+                                                previewCard.style.marginBottom = '0.5rem';
+
+                                                const previewRank = document.createElement('span');
+                                                previewRank.className = 'slot-rank';
+                                                previewRank.textContent = card.rank;
+
+                                                const previewSuit = document.createElement('span');
+                                                previewSuit.className = 'slot-suit';
+                                                previewSuit.textContent = suitSymbols[card.suit] || '?';
+
+                                                previewCard.append(previewRank, previewSuit);
+
+                                                const prompt = document.createElement('div');
+                                                prompt.style.fontSize = '0.9rem';
+                                                prompt.style.opacity = '0.8';
+                                                prompt.textContent = 'Bu kartı nereye eklemek istersiniz?';
+
+                                                previewWrap.append(previewCard, prompt);
+
+                                                const holeButton = document.createElement('button');
+                                                holeButton.type = 'button';
+                                                holeButton.className = 'btn-action call';
+                                                holeButton.style.width = '100%';
+                                                holeButton.style.marginBottom = '0.5rem';
+                                                holeButton.textContent = '🃏 Hole Cards (Elin)';
+                                                holeButton.addEventListener('click', () => assignCardTo(index, 'hole'));
+
+                                                const communityButton = document.createElement('button');
+                                                communityButton.type = 'button';
+                                                communityButton.className = 'btn-action raise';
+                                                communityButton.style.width = '100%';
+                                                communityButton.style.marginBottom = '0.5rem';
+                                                communityButton.textContent = '🂠 Community Cards (Masa)';
+                                                communityButton.addEventListener('click', () => assignCardTo(index, 'community'));
+
+                                                const cancelButton = document.createElement('button');
+                                                cancelButton.type = 'button';
+                                                cancelButton.className = 'btn-action fold';
+                                                cancelButton.style.width = '100%';
+                                                cancelButton.textContent = '❌ İptal';
+                                                cancelButton.addEventListener('click', closeCardMenu);
+
+                                                menu.append(previewWrap, holeButton, communityButton, cancelButton);
+                                                document.body.appendChild(menu);
                                             }
                                             
                                             // Menüyü kapat
@@ -532,7 +601,7 @@
                                             function clearDetectedCards() {
                                                 detectedCards = [];
                                                 document.getElementById('detectedCardsArea').style.display = 'none';
-                                                document.getElementById('detectedCardsList').innerHTML = '';
+                                                document.getElementById('detectedCardsList').replaceChildren();
                                                 closeCardMenu();
                                             }
                                             
@@ -670,37 +739,56 @@
                                             function renderCardSlots() {
                                                 const holeSlots = document.getElementById('holeCardSlots');
                                                 const commSlots = document.getElementById('communityCardSlots');
+                                                const labels = ['F1', 'F2', 'F3', 'T', 'R'];
 
-                                                // Hole cards
-                                                let holeHtml = '';
+                                                holeSlots.replaceChildren();
+                                                commSlots.replaceChildren();
+
+                                                function createEmptySlot(label) {
+                                                    const slot = document.createElement('div');
+                                                    slot.className = 'card-slot empty';
+
+                                                    const placeholder = document.createElement('span');
+                                                    placeholder.className = 'slot-placeholder';
+                                                    placeholder.textContent = label;
+
+                                                    slot.appendChild(placeholder);
+                                                    return slot;
+                                                }
+
+                                                function createFilledSlot(card, type, index) {
+                                                    const slot = document.createElement('div');
+                                                    slot.className = `card-slot filled ${suitClasses[card.suit] || ''}`;
+                                                    slot.title = 'Kaldırmak için tıkla';
+                                                    slot.addEventListener('click', () => removeCard(type, index));
+
+                                                    const rank = document.createElement('span');
+                                                    rank.className = 'slot-rank';
+                                                    rank.textContent = card.rank;
+
+                                                    const suit = document.createElement('span');
+                                                    suit.className = 'slot-suit';
+                                                    suit.textContent = suitSymbols[card.suit] || '?';
+
+                                                    slot.append(rank, suit);
+                                                    return slot;
+                                                }
+
                                                 for (let i = 0; i < 2; i++) {
                                                     if (i < liveHoleCards.length) {
-                                                        const c = liveHoleCards[i];
-                                                        holeHtml += `<div class="card-slot filled ${suitClasses[c.suit]}" onclick="removeCard('hole', ${i})" title="Kaldırmak için tıkla">
-                                                            <span class="slot-rank">${c.rank}</span>
-                                                            <span class="slot-suit">${suitSymbols[c.suit]}</span>
-                                                        </div>`;
+                                                        holeSlots.appendChild(createFilledSlot(liveHoleCards[i], 'hole', i));
                                                     } else {
-                                                        holeHtml += `<div class="card-slot empty"><span class="slot-placeholder">${i + 1}</span></div>`;
+                                                        holeSlots.appendChild(createEmptySlot(`${i + 1}`));
                                                     }
                                                 }
-                                                holeSlots.innerHTML = holeHtml;
 
-                                                // Community cards
-                                                const labels = ['F1', 'F2', 'F3', 'T', 'R'];
-                                                let commHtml = '';
                                                 for (let i = 0; i < 5; i++) {
                                                     if (i < liveCommunityCards.length) {
-                                                        const c = liveCommunityCards[i];
-                                                        commHtml += `<div class="card-slot filled ${suitClasses[c.suit]}" onclick="removeCard('community', ${i})" title="Kaldırmak için tıkla">
-                                                            <span class="slot-rank">${c.rank}</span>
-                                                            <span class="slot-suit">${suitSymbols[c.suit]}</span>
-                                                        </div>`;
+                                                        commSlots.appendChild(createFilledSlot(liveCommunityCards[i], 'community', i));
                                                     } else {
-                                                        commHtml += `<div class="card-slot empty"><span class="slot-placeholder">${labels[i]}</span></div>`;
+                                                        commSlots.appendChild(createEmptySlot(labels[i]));
                                                     }
                                                 }
-                                                commSlots.innerHTML = commHtml;
                                             }
 
                                             // =============================================
@@ -721,7 +809,7 @@
                                                 try {
                                                     const response = await fetch('@Url.Action("AnalyzeCards", "Poker")', {
                                                         method: 'POST',
-                                                        headers: { 'Content-Type': 'application/json' },
+                                                        headers: createPostHeaders('application/json'),
                                                         body: JSON.stringify(body)
                                                     });
 
@@ -811,7 +899,7 @@
                                             function addLiveAIMsg(text, role) {
                                                 const msg = document.createElement('div');
                                                 msg.className = `ai-msg ${role}`;
-                                                msg.innerHTML = text;
+                                                msg.textContent = text;
                                                 liveMessagesDiv.appendChild(msg);
                                                 liveMessagesDiv.scrollTop = liveMessagesDiv.scrollHeight;
                                             }
@@ -854,7 +942,7 @@
                                                 try {
                                                     const response = await fetch('@Url.Action("PokerChat", "AI")', {
                                                         method: 'POST',
-                                                        headers: { 'Content-Type': 'application/json' },
+                                                        headers: createPostHeaders('application/json'),
                                                         body: JSON.stringify({ message: text, gameState: getLiveGameState() })
                                                     });
 

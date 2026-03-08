@@ -369,6 +369,18 @@
 
 @section Scripts {
 <script>
+    const requestVerificationToken =
+        document.querySelector('meta[name="request-verification-token"]')?.getAttribute('content') ?? '';
+
+    function createPostHeaders(contentType) {
+        const headers = {};
+        if (contentType) {
+            headers['Content-Type'] = contentType;
+        }
+        headers.RequestVerificationToken = requestVerificationToken;
+        return headers;
+    }
+
     // =============================================
     // Player Actions
     // =============================================
@@ -380,7 +392,7 @@
         try {
             const response = await fetch('@Url.Action("Action", "Poker")', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: createPostHeaders('application/json'),
                 body: JSON.stringify({ action: action, amount: parseInt(amount) || 0 })
             });
 
@@ -405,7 +417,7 @@
     function addAIMsg(text, role) {
         const msg = document.createElement('div');
         msg.className = `ai-msg ${role}`;
-        msg.innerHTML = text;
+        msg.textContent = text;
         messagesDiv.appendChild(msg);
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
@@ -457,7 +469,7 @@
         try {
             const response = await fetch('@Url.Action("PokerChat", "AI")', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: createPostHeaders('application/json'),
                 body: JSON.stringify({ message: text, gameState: getPokerState() })
             });
 
