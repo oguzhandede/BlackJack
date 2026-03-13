@@ -6,7 +6,7 @@ ASP.NET Core MVC tabanli bir Blackjack ve Poker egitim projesi.
 
 - Blackjack oyunu
 - Poker (Texas Hold'em) oyun akisi
-- OpenRouter uzerinden AI strateji yardimi
+- OpenRouter veya AnythingLLM uzerinden AI strateji yardimi
 - Kart gorselinden kart tespiti (vision model)
 
 ## Gereksinimler
@@ -28,14 +28,26 @@ ASP.NET Core MVC tabanli bir Blackjack ve Poker egitim projesi.
    ```powershell
    Copy-Item appsettings.Local.example.json appsettings.Local.json
    ```
-3. `appsettings.Local.json` icine kendi OpenRouter API anahtarini ekle:
+3. `appsettings.Local.json` icine AI saglayicisi secimini ve gerekli anahtarlari ekle:
    ```json
    {
+     "AI": {
+       "Provider": "AnythingLLM"
+     },
      "OpenRouter": {
        "ApiKey": "YOUR_REAL_OPENROUTER_API_KEY"
+     },
+     "AnythingLLM": {
+       "BaseUrl": "http://ai-dev.poyolms.com",
+       "ApiKey": "YOUR_REAL_ANYTHINGLLM_API_KEY",
+       "WorkspaceSlug": "poyo",
+       "Mode": "query",
+       "HistoryLimit": 100,
+       "HistoryOrderBy": "asc"
      }
    }
    ```
+   `AI:Provider` degeri `OpenRouter` veya `AnythingLLM` olabilir.
 4. Uygulamayi calistir:
    ```bash
    dotnet run
@@ -44,7 +56,7 @@ ASP.NET Core MVC tabanli bir Blackjack ve Poker egitim projesi.
 ## Guvenlik Notu
 
 - `appsettings.json` dosyasinda sadece ornek/degerlendirme verisi bulunur.
-- Gercek API anahtari `appsettings.Local.json` icinde tutulmalidir.
+- Gercek API anahtarlari `appsettings.Local.json` icinde tutulmalidir.
 - `appsettings.Local.json` `.gitignore` ile repoya dahil edilmez.
 
 ## Lisans

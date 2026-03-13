@@ -1,9 +1,6 @@
-using System.Net;
-using System.Text;
 using Blackjack.Controllers;
 using Blackjack.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Blackjack.Tests;
@@ -11,20 +8,9 @@ namespace Blackjack.Tests;
 public class AIChatSmokeTests
 {
     [Fact]
-    public async Task Chat_ReturnsSuccessfulResponse_WithFakeOpenRouterService()
+    public async Task Chat_ReturnsSuccessfulResponse_WithFakeAiService()
     {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["OpenRouter:ApiKey"] = "fake-api-key",
-                ["OpenRouter:BaseUrl"] = "https://example.test"
-            })
-            .Build();
-
-        var fakeHandler = new FakeOpenRouterHandler();
-        var httpClient = new HttpClient(fakeHandler);
-        var service = new OpenRouterService(httpClient, configuration, NullLogger<OpenRouterService>.Instance);
-        var controller = new AIController(service, NullLogger<AIController>.Instance);
+        var controller = new AIController(new FakeAIService(), NullLogger<AIController>.Instance);
 
         var result = await controller.Chat(new AIChatRequest
         {
@@ -37,20 +23,21 @@ public class AIChatSmokeTests
         Assert.Equal("Mocked AI reply", payload["response"]!.GetValue<string>());
     }
 
-    private sealed class FakeOpenRouterHandler : HttpMessageHandler
+    private sealed class FakeAIService : IAIService
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        public Task<string> GetChatResponseAsync(string userMessage, object? gameState = null)
         {
-            Assert.Equal(HttpMethod.Post, request.Method);
-            Assert.Equal("/api/v1/chat/completions", request.RequestUri?.AbsolutePath);
+            return Task.FromResult("Mocked AI reply");
+        }
 
-            const string content = "{\"choices\":[{\"message\":{\"content\":\"Mocked AI reply\"}}]}";
-            var response = new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(content, Encoding.UTF8, "application/json")
-            };
+        public Task<string> GetPokerChatResponseAsync(string userMessage, object? gameState = null)
+        {
+            return Task.FromResult("Mocked poker AI reply");
+        }
 
-            return Task.FromResult(response);
+        public Task<CardDetectionResult> DetectCardsFromImageAsync(string base64Image)
+        {
+            return Task.FromResult(new CardDetectionResult { Success = true });
         }
     }
 }

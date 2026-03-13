@@ -1,7 +1,6 @@
 using Blackjack.Controllers;
 using Blackjack.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Blackjack.Tests;
@@ -50,15 +49,24 @@ public class AIControllerValidationTests
 
     private static AIController CreateController()
     {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["OpenRouter:ApiKey"] = "test-api-key",
-                ["OpenRouter:BaseUrl"] = "https://openrouter.ai/api/v1"
-            })
-            .Build();
+        return new AIController(new FakeAIService(), NullLogger<AIController>.Instance);
+    }
 
-        var service = new OpenRouterService(new HttpClient(), configuration, NullLogger<OpenRouterService>.Instance);
-        return new AIController(service, NullLogger<AIController>.Instance);
+    private sealed class FakeAIService : IAIService
+    {
+        public Task<string> GetChatResponseAsync(string userMessage, object? gameState = null)
+        {
+            return Task.FromResult("ok");
+        }
+
+        public Task<string> GetPokerChatResponseAsync(string userMessage, object? gameState = null)
+        {
+            return Task.FromResult("ok");
+        }
+
+        public Task<CardDetectionResult> DetectCardsFromImageAsync(string base64Image)
+        {
+            return Task.FromResult(new CardDetectionResult { Success = true });
+        }
     }
 }

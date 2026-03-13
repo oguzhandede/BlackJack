@@ -9,12 +9,12 @@ namespace Blackjack.Controllers
         private const int MaxMessageLength = 2000;
         private const int MaxImagePayloadLength = 12_000_000;
 
-        private readonly OpenRouterService _openRouterService;
+        private readonly IAIService _aiService;
         private readonly ILogger<AIController> _logger;
 
-        public AIController(OpenRouterService openRouterService, ILogger<AIController> logger)
+        public AIController(IAIService aiService, ILogger<AIController> logger)
         {
-            _openRouterService = openRouterService;
+            _aiService = aiService;
             _logger = logger;
         }
 
@@ -39,7 +39,7 @@ namespace Blackjack.Controllers
 
             try
             {
-                var response = await _openRouterService.GetChatResponseAsync(message, request.GameState);
+                var response = await _aiService.GetChatResponseAsync(message, request.GameState);
                 return Json(new { success = true, response });
             }
             catch (Exception ex)
@@ -71,7 +71,7 @@ namespace Blackjack.Controllers
 
             try
             {
-                var result = await _openRouterService.DetectCardsFromImageAsync(image);
+                var result = await _aiService.DetectCardsFromImageAsync(image);
                 return Json(new
                 {
                     success = result.Success,
@@ -109,7 +109,7 @@ namespace Blackjack.Controllers
 
             try
             {
-                var response = await _openRouterService.GetPokerChatResponseAsync(message, request.GameState);
+                var response = await _aiService.GetPokerChatResponseAsync(message, request.GameState);
                 return Json(new { success = true, response });
             }
             catch (Exception ex)

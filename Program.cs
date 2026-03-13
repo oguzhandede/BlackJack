@@ -11,6 +11,7 @@ builder.Services.AddControllersWithViews(options =>
 
 // Session support
 builder.Services.AddDistributedMemoryCache();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddSession(options =>
 {
     options.IdleTimeout = TimeSpan.FromHours(2);
@@ -20,8 +21,10 @@ builder.Services.AddSession(options =>
     options.Cookie.IsEssential = true;
 });
 
-// OpenRouter AI Service
+// AI services
 builder.Services.AddHttpClient<Blackjack.Services.OpenRouterService>();
+builder.Services.AddHttpClient<Blackjack.Services.AnythingLlmService>();
+builder.Services.AddScoped<Blackjack.Services.IAIService, Blackjack.Services.ConfiguredAIService>();
 
 var app = builder.Build();
 
@@ -31,6 +34,7 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Home/Error");
     app.UseHsts();
 }
+
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseRouting();
